@@ -1,0 +1,486 @@
+#!/bin/sh
+# Must pre-install seqkit
+# Documents in docs:
+    # docs/sample_table_fastq.tsv # Name of samples and their exact path
+    # docs/replacement_file.txt
+. ./pairing.config
+
+mkdir -p $WD/log
+mkdir -p $WD/tmp
+
+# Generate unique filenames using the current date and time
+timestamp=$(date +"%Y%m%d_%H%M%S")
+stdout_log="pipeline_log_${timestamp}.o"
+stderr_log="pipeline_log_${timestamp}.e"
+
+# Redirect stdout and stderr to the unique log files
+exec > >(tee -a "$WD/log/$stdout_log") 2> >(tee -a "$WD/log/$stderr_log" >&2)
+
+
+if [ "$RUN_DB_EDIT" == "true" ]
+then
+    echo "Running database editing"
+    sleep 1
+    eval "$CD_HIT"
+    eval "$CELL_RANGER"
+    DB_VIRUS_OUTPUT=$(basename "$DB_VIRUS" .fasta)
+    cd-hit-est -c 0.99 -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.99.fasta
+
+    tr '|' '#' < $DB_VIRUS_OUTPUT.99.fasta > $DB_VIRUS_OUTPUT.99.clean.fasta
+
+    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.99.clean.fasta  >  $DB_VIRUS_OUTPUT.99.final.fasta
+
+    sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.99.final.fasta
+
+
+    bin/create_gtf.sh $DB_VIRUS_OUTPUT.99.final.fasta
+
+    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
+
+
+    bin/create_reference_new.sh $REF $DB_VIRUS_OUTPUT.99.final.fasta 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
+    echo "Done database editing"
+fi
+
+
+if [ "$RUN_DB_EDIT" == "false" ]
+then
+    echo "Skipping database editing"
+    sleep 1
+fi
+
+if [ "$RUN_CELL_RANGER" == "true" ]
+then
+    echo "Running Cell ranger count protocol"
+    sleep 1
+    eval "$CELL_RANGER"
+    ID=$(basename $FASTQDIR)
+    DIRPATH="$(dirname "${REF}")"
+
+    job_ids=()
+    for dir in $FASTQDIR*/
+    do
+        echo $dir
+        ID=$(basename $dir)
+        # Submit the job and extract the job ID
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)  # Store the job ID
+    done
+
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+
+    echo "Cell ranger protocol is done"
+fi
+
+if [ "$RUN_CELL_RANGER" == "false" ]
+then
+    echo "Skipping cell ranger protocol"
+    sleep 1
+fi
+
+# Edit cell ranger files
+
+if [ "$RUN_READ_MTX" == "true" ]
+then
+    echo "Running cell ranger matrix editing"
+    sleep 1
+    dirs_list=()
+    job_ids=()
+    for DIR in */outs/filtered_feature_bc_matrix
+    do
+        SAMPLE=${DIR%%/outs/*}
+        echo "$SAMPLE";
+        dirs_list+=("$SAMPLE")
+        # Submit the job and extract the job ID
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n 1 -R "rusage[mem=10000]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)  # Store the job ID
+    done
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+    job_ids=()
+    # combine
+    echo "Done editing mtx files"
+    sleep 1
+    dirs_string=$(IFS=,; echo "${dirs_list[*]}")
+    bin/combine_pickle.py --data_dir "$WD/" --list_folders $dirs_string --output_folder Combined_RAW --raw
+fi
+
+if [ "$RUN_READ_MTX" == "false" ]
+then
+    echo "Skipping cell ranger matrix editing"
+    sleep 1
+fi
+
+# Get a list of infected cells
+if [ "$RUN_FIND_INFECTED" == "true" ]
+then
+    echo "Finding infected cells"
+    sleep 1
+    bin/choose_cells.py --data_dir Combined_RAW/ --sample_table $SAMPLE_TABLE --output_folder Combined_RAW/ --sum $SUM_UMI --count $GENE_COUNT --exp $MAX_UMI 
+
+    tr -d '\r' < Combined_RAW/infected_cells.tsv > Combined_RAW/infected_cells_new.tsv
+    echo "Done searching for infected cells"
+fi
+
+if [ "$RUN_FIND_INFECTED" == "false" ]
+then
+    echo "Skipping finding infected cells"
+    sleep 1
+fi
+
+if [ "$RUN_EXTRACT_READS" == "true" ]
+then
+    module purge
+
+    echo "Running read extraction protocol"
+    sleep 1
+
+    mkdir -p assemble_first_cells/all_cells
+
+    cp Combined_RAW/infected_cells_new.tsv assemble_first_cells/all_cells/
+
+    cd assemble_first_cells/all_cells/
+    eval "$SEQTK"
+    eval "$TRIM"
+
+    sh $WD/bin/extract_reads_cell_parallel.sh infected_cells_new.tsv
+    ITER=1
+    # Check if any files return empty
+    grep "completely empty" $WD/log_extract/*e > $WD/tmp/empty_extract.txt
+    while [ -s "$WD/tmp/empty_extract.txt" ] && [ "$ITER" -lt 6 ]
+    do
+        ((ITER++))
+        echo "Some jobs failed. Starting iteration $ITER"
+        rm -r $WD/log_extract
+        sh $WD/bin/extract_reads_cell_parallel.sh infected_cells_new.tsv
+        grep "completely empty" $WD/log_extract/*e > $WD/tmp/empty_extract.txt
+    done
+    cd $WD
+    echo "Done extracting reads"
+fi
+
+if [ "$RUN_EXTRACT_READS" == "false" ]
+then
+    echo "Skipping read extraction"
+    sleep 1
+fi
+
+if [ "$RUN_ASSEMBLE_CELLS" == "true" ]
+then
+
+    echo "Running cell assembly protocol"
+    MAX_JOBS=$(( MAX_MEM / ( MEM_SPADES*CORES_SPADES ) ))
+    ITER=1
+    sleep 1
+    module purge
+    eval "$SPADES"
+    cd assemble_first_cells/all_cells/
+    mkdir -p $WD/log_spades
+    rm $WD/log_spades/assemble_cell_*
+    sh $WD/bin/assemble_cell_parallel.sh $WD/assemble_first_cells/all_cells/infected_cells_new.tsv $CORES_SPADES
+    # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
+    grep -l "reaching LSF memory usage limit" $WD/log_spades/assemble_cell_* > $WD/tmp/assembly_limit_use.txt
+
+    while [ -s "$WD/tmp/assembly_limit_use.txt" ] 
+    do
+        ((ITER++))
+        rm $WD/log_spades/assemble_cell_*
+        CORES_SPADES=$(( ITER*CORES_SPADES ))
+        echo "Some jobs failed due to memory. Starting iteration $ITER"
+        sh $WD/bin/assemble_cell_parallel.sh $WD/assemble_first_cells/all_cells/infected_cells_new.tsv $CORES_SPADES
+
+        grep -l "reaching LSF memory usage limit" $WD/log_spades/assemble_cell_* > $WD/tmp/assembly_limit_use.txt
+    done
+    cd $WD
+    echo "Done assembling cells"
+fi
+
+if [ "$RUN_ASSEMBLE_CELLS" == "false" ]
+then
+    echo "Skipping cell assembly protocol"
+fi
+
+if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "true" ]
+then
+    echo "Running read and contig editing protocol"
+    sleep 1
+    module purge
+    # Combine reads to both lanes
+    cd assemble_first_cells/all_cells/
+    for some_path in */
+    do
+        CELL=$(basename $some_path)
+        for file in $some_path/*.filtered_trimmed_trimmed.fq.gz
+        do
+            SUBSTRING="${file##*/}"
+           # ID="$(awk -F '_L' '{print $1}' <<< "$SUBSTRING" )"
+            cat $some_path/*.filtered_trimmed_trimmed.fq.gz > $some_path/$CELL.combined.fq.gz
+        done
+    done
+    # Edit names of transcripts for each cell
+    $WD/bin/array_loop_files.sh $WD/assemble_first_cells/all_cells $WD/bin/editing_contigs_array.sh 100
+
+    cat $WD/assemble_first_cells/all_cells/*/assembly/transcripts.edit.fasta > $WD/assemble_first_cells/all_cells.transcripts.edit.fasta
+    cd $WD/assemble_first_cells
+    # Remove low-complexity transcripts
+    eval "$BBMAP"
+    bbduk.sh in=all_cells.transcripts.edit.fasta out=all_cells.transcripts.final.fasta outm=low_complexity.fq entropy=$ENTROPY
+    echo "Done editing reads and contig"
+fi
+
+if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "false" ]
+then
+    echo "Skipping read and contig editing"
+fi
+
+if [ "$RUN_BLAST" == "true" ]
+then
+    cd $WD
+    echo "Running blast"
+    rm $WD/log/blastn_*pr2*
+    eval "$BLAST"
+    sleep 1
+    if [ "$RUN_SORTMERNA" == "true" ]
+    then
+        mkdir -p assemble_first_cells/sortmerna
+        rm -r $WD/kvdb
+        sortmerna --ref  $PR2_FASTA --kvdb $WD/kvdb --threads $THREADS_SORTMERNA --reads assemble_first_cells/all_cells.transcripts.final.fasta --aligned assemble_first_cells/sortmerna/all_cells.rRNA -fastx assemble_first_cells/sortmerna/all_cells.rRNA
+    fi
+
+    TOTAL_MEM=$(( CORES_BLAST*MEM_BLAST ))
+    if [ "$TOTAL_MEM" -lt 2000 ]
+    then
+        echo "Blast memory has to be higher than 2000!"
+        exit 1
+    fi
+    mkdir -p blast_results
+    ITER=1
+    THREADS=$(( CORES_BLAST*2 ))
+    echo "Starting blast search"
+    job_ids=()
+    job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_pr2   -o $WD/log/blastn_pr2.%J.o -e $WD/log/blastn_pr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $PR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.PR2.tsv | awk '{print $2}' | tr -d '<>')
+    job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_metapr2 -o $WD/log/blastn_metapr2.%J.o -e $WD/log/blastn_metapr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $METAPR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.metaPR2.tsv | awk '{print $2}' | tr -d '<>')
+
+    job_ids+=($job_id1)  # Store the job ID
+    job_ids+=($job_id2)  # Store the job ID
+
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"; do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+    
+    # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
+    grep -l "reaching LSF memory usage limit" $WD/log/blastn_*pr2* > $WD/tmp/blastn_limit_use.txt
+
+    while [ -s "$WD/tmp/blastn_limit_use.txt" ] 
+    do
+        ((ITER++))
+        MEM_BLAST=$(( MEM_BLAST*ITER ))
+        echo "Some jobs failed due to memory. Starting iteration $ITER"
+        job_ids=()
+            
+        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_pr2.$ITER.   -o $WD/log/blastn_pr2.$ITER.%J.o -e $WD/log/blastn_pr2.$ITER.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $PR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.PR2.tsv | awk '{print $2}' | tr -d '<>')
+        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_metapr2.$ITER. -o $WD/log/blastn_metapr2.$ITER.%J.o -e $WD/log/blastn_metapr2.$ITER.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $METAPR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.metaPR2.tsv | awk '{print $2}' | tr -d '<>')
+
+        job_ids+=($job_id1)  # Store the job ID
+        job_ids+=($job_id2)  # Store the job ID
+
+        # Wait for all jobs to finish
+        for id in "${job_ids[@]}"
+        do
+            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+                sleep 10  # Wait for 10 seconds before checking again
+            done # Done checking status of jobs 
+        done # The jobs are done
+        job_ids=()
+        grep -l "reaching LSF memory usage limit" $WD/log/blastn_limit_use*.$ITER.*.o > $WD/tmp/blastn_limit_use.txt
+    done
+    
+    awk '$4 >= 100 && $3 >= 99' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
+
+    awk '$4 >= 100 && $3 >= 99' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
+    echo "Done blast"
+fi
+
+if [ "$RUN_BLAST" == "false" ]
+then
+    echo "Skipping blast"
+fi
+
+if [ "$RUN_18S_LAST" == "true" ]
+then
+    cd $WD
+    echo "Running 18s last search"
+    sleep 1
+    mkdir -p $WD/mapped_cells_18s
+    mkdir -p $WD/log_last
+    rm $WD/log_last/*
+    eval "$SEQTK"
+    ls assemble_first_cells/all_cells/*/*combined.fq.gz > $WD/tmp/combined_reads.txt
+    sh bin/lastal_loop_18s.sh $WD/tmp/combined_reads.txt
+    
+    grep -l "reaching LSF memory usage limit" $WD/log_last/18s_lastal* > $WD/tmp/18s_lastal_limit_use.txt
+    ITER=1
+    find $WD/mapped_cells_18s -size 0 -delete
+    while [ -s "$WD/tmp/18s_lastal_limit_use.txt" ] 
+    do
+        ((ITER++))
+        MEMORY_LAST=$(( MEMORY_LAST*ITER ))
+        MAX_JOBS=$(( MAX_MEM / ( MEMORY_LAST*CORES_LAST ) ))
+        echo "$MAX_JOBS"
+        echo "Some jobs failed due to memory. Starting iteration $ITER"
+        job_ids=()
+        while IFS= read -r line; do
+            command=$(grep "bin/lastal_loop_18s_run.sh" $line)
+            cell=$(echo $command | awk '{print $NF}')
+            echo $command
+            number=$(bjobs -w | wc -l) # get the numbers of jobs running
+            # Limit number of jobs
+            while [ "$number" -gt $MAX_JOBS ];do 
+            
+                echo "$number"
+                sleep 1
+                number=$(bjobs -w | wc -l)
+            done
+
+            job_id=$(bsub -q short -J $WD/log_last/18s_lastal.$cell.$ITER. -o $WD/log_last/18s_lastal.$cell.$ITER.%J.o -e $WD/log_last/18s_lastal.$cell.$ITER.%J.e  -n $CORES_LAST -R "rusage[mem=$MEMORY_LAST] span[ptile=$CORES_LAST]" $command | awk '{print $2}' | tr -d '<>')
+            job_ids+=($job_id)  # Store the job ID
+            
+        done < $WD/tmp/18s_lastal_limit_use.txt
+
+        # Wait for all jobs to finish
+        for id in "${job_ids[@]}"
+        do
+            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+                sleep 10  # Wait for 10 seconds before checking again
+            done # Done checking status of jobs 
+        done # The jobs are done
+        grep -l "reaching LSF memory usage limit" $WD/log_last/18s_lastal*.$ITER.*.o > $WD/tmp/18s_lastal_limit_use.txt
+    
+    done
+    echo "Done running 18s last search"
+fi
+
+
+if [ "$RUN_18S_LAST" == "false" ]
+then
+    echo "Skipping 18s last"
+fi
+
+
+if [ "$RUN_CELL_ANNOTATION" == "true" ]
+then
+    echo "Running cell annotation"
+    sleep 1
+    job_ids=()
+    if [ "$SUMMARIZE_BLAST" == "true" ]
+    then
+        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/blast_sum.py --path $WD --metapr2_file /blast_results/all_cells.rRNA.metaPR2.tsv --pr2_file /blast_results/all_cells.rRNA.PR2.tsv --replacement_file $REPLACEMENT_FILE | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id1)  # Store the job ID
+    fi
+    if [ "$SUMMARIZE_LAST" == "true" ]
+    then
+        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s.py  --output_path $WD --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id2)  # Store the job ID
+    fi
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"; do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+
+    bin/summarize_annotations.py --output_path $WD --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $LIST_CELLS
+    echo "Done annotating cells"
+fi
+
+if [ "$RUN_CELL_ANNOTATION" == "false" ]
+then
+    echo "Skipping cell annotation"
+fi
+
+if [ "$RUN_VIRAL_BLAST" == "true" ]
+then
+    cd $WD
+    echo "Running viral blast"
+    rm $WD/log/blastn_virus*
+    sleep 1
+    eval "$BLAST"
+    mkdir -p blast_results
+    ITER=1
+    THREADS=$(( CORES_BLAST*2 ))
+    
+    job_ids=()
+    job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
+
+    job_ids+=($job_id)  # Store the job ID
+
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"; do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+    
+    # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
+    
+    grep -l "reaching LSF memory usage limit" $WD/log/blastn_virus* > $WD/tmp/blastn_limit_use.txt
+
+    while [ -s "$WD/tmp/blastn_limit_use.txt" ] 
+    do
+        ((ITER++))
+        MEM_BLAST=$(( MEM_BLAST*ITER ))
+        echo "Some jobs failed due to memory. Starting iteration $ITER"
+        job_ids=()
+            
+        job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)  # Store the job ID
+
+        # Wait for all jobs to finish
+        for id in "${job_ids[@]}"
+        do
+            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+                sleep 10  # Wait for 10 seconds before checking again
+            done # Done checking status of jobs 
+        done # The jobs are done
+        job_ids=()
+        grep -l "reaching LSF memory usage limit" $WD/log/blastn_limit_use*.$ITER.*.o > $WD/tmp/blastn_limit_use.txt
+    done
+    echo "Done virus blast"
+
+fi
+    
+
+if [ "$RUN_VIRAL_BLAST" == "false" ]
+then
+    echo "Skipping viral blast"
+fi
+
+
+if [ "$RUN_VIRAL_SUMMARY" == "true" ]
+then
+    sleep 1
+    echo "Running viral summary"
+    bin/blast_viruses_summary.py --output_path $OUTPUT_PATH --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file $ANNOTATION_FILE --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+    echo "Done viral summary"
+fi
+
+if [ "$RUN_VIRAL_SUMMARY" == "false" ]
+then
+    echo "Skipping viral summary"
+fi
+
+
