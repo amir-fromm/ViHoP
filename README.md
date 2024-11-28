@@ -12,7 +12,7 @@ This repository is built to work on an LSF platform since many of the script use
 ### 1. Cloning this repository
 
 ```
-git clone https://git
+git clone https://github.com/amir-fromm/ViHoP.git
 ``` 
 Then go into the directory
 ```
