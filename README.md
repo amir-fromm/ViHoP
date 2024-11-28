@@ -1,10 +1,9 @@
   
 # ViHoP: Virus-Host Pairing
-## Pairing viruses to their hosts from environmental single-cell 10x data
-Code repository and instructions for finding host-virus pairs from single-cell 10X sequencing data
+A bioinformatic pipeline for pairing viruses to their hosts from environmental single-cell 10x data.
 
 amir.fromm@weizmann.ac.il  
-## What the script does
+## What the pipeline does
 This pipeline takes single-cell RNA-sequenceing data 10X sequecing and using a viral and host references, produce a matrix of host cells and the viruses that infects them.
 This repository is built to work on an LSF platform since many of the script use parallization.
 
