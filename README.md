@@ -7,6 +7,8 @@ amir.fromm@weizmann.ac.il
 This pipeline takes single-cell RNA-sequenceing data 10X sequecing and using a viral and host references, produce a matrix of host cells and the viruses that infects them.
 This repository is built to work on an LSF platform since many of the script use parallization.
 
+![alt text](https://github.com/amir-fromm/ViHoP/blob/main/sc_virus_host_detection_pipeline.png?raw=true)
+
 ### 1. Cloning this repository
 
 ```
