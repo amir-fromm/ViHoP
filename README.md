@@ -9,7 +9,8 @@ This repository is built to work on an LSF platform since many of the scripts us
 
 ![alt text](https://github.com/amir-fromm/ViHoP/blob/main/sc_virus_host_detection_pipeline.png?raw=true)
 
-### 1. Cloning this repository
+## 1. Installation
+### Cloning this repository
 
 ```
 git clone https://github.com/amir-fromm/ViHoP.git
@@ -24,7 +25,7 @@ conda create --name host-virus-pairing --file requirements.txt
 conda activate host-virus-pairing
 ```
 
-### 2. Other dependencies  
+### Other dependencies  
 
 Besides the packages from the requirements file, the pipeline also uses modules that were installed in our LSF platform and are called using the module load command:
 ```
@@ -39,7 +40,30 @@ seqtk
 ```
 The specific module names can be changed using the config file. If you don't have these tools installed on your LSF platform, install them on your conda environment.
 
-### 3. Making host reference databases
+## 2. Resources
+### Sample table fastq file
+
+This file, found in the docs folder, is a tab-delimited file of the different samples used in the analysis and the full path to their correspomnding 10X fastq files:
+sample1	/home/user1/fastq/sample1
+sample2	/home/user2/fastq/sample2
+
+### Common names replacement file
+
+replacment_file.tsv is a tab-delimited file found in the docs folder, containing four columns:
+level,old_name,new_name,color.
+The replacement file is used to replace the names of specific taxonomic groups with common names in the cell annotation files.
+The first column is the level of the old taxonomic name you want to replace.
+The second column is the old taxonomic name.
+The third column is the new name you want to assign to the taxonomic group.
+The fourth column is a color assigned to the taxonomic group.
+For example:
+
+Supergroup	Chlorophyta	Green-algae/Plants	#008000
+
+Result: Cells belonging to the supergroup Chlorophyta will be annotated as Green-algae/Plants and marked green.
+
+
+### Making host reference databases
 
 You will need to to download the latest protist host 18s rRNA databases PR2 (version 5) and metaPR2 (version 2) (https://pr2-database.org/, https://app.metapr2.org/metapr2/) and create last and blast db from them:
 ```
@@ -48,7 +72,7 @@ makeblastdb -in db_path/metaPR2.fasta -blastdb_version 5 -title "metaPR2" -dbtyp
 lastdb -c -P 4 PR2 db_path/PR2.fasta
 
 ```
-### 4. Virus taxonomy
+### Virus taxonomy
 
 A virus database of your choice should be available (you can use Aylward's giant virus database: https://faylward.github.io/GVDB/), and a virus taxonomy table should be available. 
 It is a comma-delimited file where the first column contains the contig name in the virus reference (or part of it), and the second is the virus taxonomy.
@@ -57,17 +81,18 @@ After you download the virus database, make a blast db:
 makeblastdb -in db_path/GVDB.fasta -blastdb_version 5 -title "GVDB" -dbtype nucl -out GVDB
 
 ```
-### 5. Fastq files
+### Fastq files
 
 You need to specify the path to fastq files of the 10X sequencing.
 The script works on 10x Chromium with 2 lanes.
 
-### 6. Config file
+## 3. Running the pipeline
+### Config file
 
 Read the config file thoroughly and adjust the variables to your experiment.
 The pipeline is separated into different stages, and each stage can run separately if the inputs exist.
 
-### 7. Pipeline stages
+### Pipeline stages
 
 Each stage can run independently 
 
