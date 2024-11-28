@@ -1,5 +1,6 @@
   
-# Pairing viruses to their hosts from environmental single-cell 10x data
+# ViHoP: Virus-Host Pairing
+## Pairing viruses to their hosts from environmental single-cell 10x data
 Code repository and instructions for finding host-virus pairs from single-cell 10X sequencing data
 
 amir.fromm@weizmann.ac.il  
