@@ -94,11 +94,12 @@ The pipeline is separated into different stages, and each stage can run separate
 
 ### Pipeline stages
 
-Each stage can run independently 
+Each stage can run independently if it has the right inputs. You can skip each stage by changing the RUN parameter associated with each stage from "true" to "false". To run the entire pipeline, change all RUN parameters to true. 
+In the first run, it is recommended to run the pipeline step by step.
 
 #### Database Editing
 
-It takes as an input a fasta file of the virus genes you are interested in finding in your data. It will de-duplicate the database at 99% using CD-HIT and create a cell-ranger reference.
+Editing the viral gene databse to make it suitable for Cell Ranger count. It takes as an input a fasta file of the virus genes you are interested in finding in your data. It will de-duplicate the database at 99% using CD-HIT and create a Cell Ranger reference.
 
 #### Cell ranger count
 
