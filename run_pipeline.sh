@@ -38,7 +38,7 @@ then
     sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
 
 
-    bin/create_reference_new.sh $REF $DB_VIRUS_OUTPUT.99.final.fasta 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
+    bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.99.final.fasta 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
     echo "Done database editing"
 fi
 
@@ -56,14 +56,13 @@ then
     eval "$CELL_RANGER"
     ID=$(basename $FASTQDIR)
     DIRPATH="$(dirname "${REF}")"
-
     job_ids=()
     for dir in $FASTQDIR*/
     do
         echo $dir
         ID=$(basename $dir)
         # Submit the job and extract the job ID
-        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
     done
 
