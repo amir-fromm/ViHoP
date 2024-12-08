@@ -7,6 +7,8 @@
 # updated to a streamline protocol in 3-11-24
 
 BARCODES=$1 # List of cell barcodes. E.g. cells cells with high probability of infection
+CORES=$2 
+MAX_JOBS=$(( MAX_MEM / ( MEM_SPADES*CORES ) ))
 job_ids=()
 
 MAX_JOBS=$(( MAX_MEM /  MEM_SPADES ))
@@ -15,8 +17,6 @@ echo "Assembling cell"
 
 while IFS=$'\t' read -r barcode FASTQ || [ -n "$barcode" ]
     do
-        echo "$barcode"
-        echo "$FASTQ"
 
         FASTQB=$(basename  $FASTQ)
 
@@ -32,7 +32,7 @@ while IFS=$'\t' read -r barcode FASTQ || [ -n "$barcode" ]
                 number=$(bjobs -w | wc -l)
             done
             
-            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log_spades/assemble_cell_$barcode -o $WD/log_spades/assemble_cell_$barcode.%J.o -e $WD/log_spades/assemble_cell_$barcode.%J.e -n 1 -R "rusage[mem=$MEM_SPADES]" sh $WD/bin/assemble_cell.sh $barcode $FASTQ  | awk '{print $2}' | tr -d '<>')
+            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log_spades/assemble_cell_$barcode -o $WD/log_spades/assemble_cell_$barcode.%J.o -e $WD/log_spades/assemble_cell_$barcode.%J.e -n $CORES -R "rusage[mem=$MEM_SPADES]" sh $WD/bin/assemble_cell.sh $barcode $FASTQ $CORES | awk '{print $2}' | tr -d '<>')
             job_ids+=($job_id)  # Store the job ID
             
             sleep 0.01

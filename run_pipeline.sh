@@ -98,7 +98,7 @@ then
         echo "$SAMPLE";
         dirs_list+=("$SAMPLE")
         # Submit the job and extract the job ID
-        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n 1 -R "rusage[mem=10000]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n 1 -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
     done
     # Wait for all jobs to finish
