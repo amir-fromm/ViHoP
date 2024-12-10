@@ -89,16 +89,20 @@ if [ "$RUN_READ_MTX" == "true" ]
 then
     echo "Running cell ranger matrix editing"
     sleep 1
-    dirs_list=()
+    rm $WD/tmp/read_mtx.txt
+    rm $WD/log/raw_UMI_counts_10X_data_*
     job_ids=()
+    ITER=1
     for DIR in */outs/filtered_feature_bc_matrix
     do
-        SAMPLE=${DIR%%/outs/*}
-        echo "$SAMPLE";
-        dirs_list+=("$SAMPLE")
-        # Submit the job and extract the job ID
-        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n 1 -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
-        job_ids+=($job_id)  # Store the job ID
+        if ! ls "$DIR/data_raw.pickle.gz" 1> /dev/null 2>&1
+        then
+            SAMPLE=${DIR%%/outs/*}
+            echo "$SAMPLE";
+            # Submit the job and extract the job ID
+            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+            job_ids+=($job_id)  # Store the job ID
+        fi
     done
     # Wait for all jobs to finish
     for id in "${job_ids[@]}"
@@ -109,10 +113,37 @@ then
     done # The jobs are done
     job_ids=()
     # combine
+    grep -l "reaching LSF memory usage limit" $WD/log/raw_UMI_counts_10X_data_* > $WD/tmp/read_mtx.txt
+
+    while [ -s "$WD/tmp/read_mtx.txt" ] && [ "$ITER" -lt 6 ]
+    do
+        ((ITER++))
+        echo "Jobs failed do to memory. Starting iteration $ITER"
+        CORES_MTX=$(( ITER*CORES_MTX ))
+        for DIR in */outs/filtered_feature_bc_matrix
+        do
+            if ! ls "$DIR/data_raw.pickle.gz" 1> /dev/null 2>&1
+            then
+                SAMPLE=${DIR%%/outs/*}
+                echo "$SAMPLE";
+                # Submit the job and extract the job ID
+                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+                job_ids+=($job_id)  # Store the job ID
+            fi
+        done
+         # Wait for all jobs to finish
+        for id in "${job_ids[@]}"
+        do
+            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+                sleep 10  # Wait for 10 seconds before checking again
+            done # Done checking status of jobs 
+        done # The jobs are done
+        job_ids=()
+        grep -l "reaching LSF memory usage limit" $WD/log/raw_UMI_counts_10X_data_* > $WD/tmp/read_mtx.txt
+    done
     echo "Done editing mtx files"
     sleep 1
-    dirs_string=$(IFS=,; echo "${dirs_list[*]}")
-    bin/combine_pickle.py --data_dir "$WD/" --list_folders $dirs_string --output_folder Combined_RAW --raw
+    bin/combine_pickle.py --data_dir "$WD/" --list_folders $DIRS_LIST --output_folder Combined_RAW --raw
 fi
 
 if [ "$RUN_READ_MTX" == "false" ]

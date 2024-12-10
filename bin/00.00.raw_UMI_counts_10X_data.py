@@ -3,7 +3,7 @@
 import os
 from argparse import ArgumentParser
 import pandas as pd
-import scprep
+import scprep as sc
 
 def main():
     args = get_args()
@@ -12,9 +12,10 @@ def main():
     # remove clutter from gene names
     new_columns = pd.Series(data.columns).str.split('\t', expand=True)[0]
     data.columns = new_columns.to_list()
-    print('Removing empty cells/features')
-    data = data[data.sum(axis=1) > 0]
-    data = data.T[data.sum() > 0].T
+    print('Removing empty cells')
+    data = sc.filter.filter_empty_cells(data)
+    print('Removing empty genes')
+    data = sc.filter.filter_empty_genes(data)
     print('Data shape (cells, features)', data.shape)
     print('Saving raw data file')
     data.to_pickle(os.path.join(args.data_dir, "data_raw.pickle.gz"))
@@ -34,16 +35,16 @@ def load_data(datadir, filetype):
     assert (filetype in filetypes), "Please enter file format from the following {}".format(filetypes)
 
     if filetype == 'mtx':
-        data = scprep.io.load_mtx(os.path.join(datadir, 'matrix.mtx.gz'),
+        data = sc.io.load_mtx(os.path.join(datadir, 'matrix.mtx.gz'),
                                   gene_names=os.path.join(datadir, 'features.tsv.gz'),
                                   cell_names=os.path.join(datadir, 'barcodes.tsv.gz'),
                                   cell_axis="column")
 
     elif filetype == 'csv':
-        data = scprep.io.load_csv(os.path.join(datadir, 'data.csv'))
+        data = sc.io.load_csv(os.path.join(datadir, 'data.csv'))
 
     elif filetype == 'tsv':
-        data = scprep.io.load_csv(os.path.join(datadir, 'data.tsv'))
+        data = sc.io.load_csv(os.path.join(datadir, 'data.tsv'))
 
     return data
 
