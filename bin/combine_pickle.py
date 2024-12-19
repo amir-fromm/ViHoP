@@ -79,7 +79,10 @@ def main():
 
 
 def save_files_raw(path,out_folder,combined_data):
-    os.mkdir(path + "/" + out_folder)
+    try:
+        os.mkdir(path + "/" + out_folder)
+    except:
+        print("Folder exists")
     print(combined_data.shape)
     combined_data.to_pickle(path + "/" + out_folder + "/data_raw.pickle.gz")
   

@@ -115,7 +115,7 @@ then
     # combine
     grep -l "reaching LSF memory usage limit" $WD/log/raw_UMI_counts_10X_data_* > $WD/tmp/read_mtx.txt
 
-    while [ -s "$WD/tmp/read_mtx.txt" ] && [ "$ITER" -lt 6 ]
+    while [ -s "$WD/tmp/read_mtx.txt" ] && [ "$ITER" -lt 4 ]
     do
         ((ITER++))
         echo "Jobs failed do to memory. Starting iteration $ITER"
