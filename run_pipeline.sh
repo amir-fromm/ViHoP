@@ -222,7 +222,7 @@ then
     # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
     grep -l "reaching LSF memory usage limit" $WD/log_spades/assemble_cell_* > $WD/tmp/assembly_limit_use.txt
 
-    while [ -s "$WD/tmp/assembly_limit_use.txt" ] 
+    while [ -s "$WD/tmp/assembly_limit_use.txt" ] && [ "$ITER" -lt 10 ]
     do
         ((ITER++))
         rm $WD/log_spades/assemble_cell_*
@@ -239,6 +239,7 @@ fi
 if [ "$RUN_ASSEMBLE_CELLS" == "false" ]
 then
     echo "Skipping cell assembly protocol"
+    sleep 1
 fi
 
 if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "true" ]
@@ -272,15 +273,16 @@ fi
 if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "false" ]
 then
     echo "Skipping read and contig editing"
+    sleep 1
 fi
 
 if [ "$RUN_BLAST" == "true" ]
 then
     cd $WD
     echo "Running blast"
+    sleep 1
     rm $WD/log/blastn_*pr2*
     eval "$BLAST"
-    sleep 1
     if [ "$RUN_SORTMERNA" == "true" ]
     then
         mkdir -p assemble_first_cells/sortmerna
@@ -315,7 +317,7 @@ then
     # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
     grep -l "reaching LSF memory usage limit" $WD/log/blastn_*pr2* > $WD/tmp/blastn_limit_use.txt
 
-    while [ -s "$WD/tmp/blastn_limit_use.txt" ] 
+    while [ -s "$WD/tmp/blastn_limit_use.txt" ] && [ "$ITER" -lt 6 ]
     do
         ((ITER++))
         MEM_BLAST=$(( MEM_BLAST*ITER ))
@@ -348,6 +350,8 @@ fi
 if [ "$RUN_BLAST" == "false" ]
 then
     echo "Skipping blast"
+    sleep 1
+
 fi
 
 if [ "$RUN_18S_LAST" == "true" ]
@@ -365,7 +369,7 @@ then
     grep -l "reaching LSF memory usage limit" $WD/log_last/18s_lastal* > $WD/tmp/18s_lastal_limit_use.txt
     ITER=1
     find $WD/mapped_cells_18s -size 0 -delete
-    while [ -s "$WD/tmp/18s_lastal_limit_use.txt" ] 
+    while [ -s "$WD/tmp/18s_lastal_limit_use.txt" ] && [ "$ITER" -lt 6 ]
     do
         ((ITER++))
         MEMORY_LAST=$(( MEMORY_LAST*ITER ))
@@ -408,6 +412,7 @@ fi
 if [ "$RUN_18S_LAST" == "false" ]
 then
     echo "Skipping 18s last"
+    sleep 1
 fi
 
 
@@ -440,6 +445,7 @@ fi
 if [ "$RUN_CELL_ANNOTATION" == "false" ]
 then
     echo "Skipping cell annotation"
+    sleep 1
 fi
 
 if [ "$RUN_VIRAL_BLAST" == "true" ]
@@ -469,7 +475,7 @@ then
     
     grep -l "reaching LSF memory usage limit" $WD/log/blastn_virus* > $WD/tmp/blastn_limit_use.txt
 
-    while [ -s "$WD/tmp/blastn_limit_use.txt" ] 
+    while [ -s "$WD/tmp/blastn_limit_use.txt" ] && [ "$ITER" -lt 6 ]
     do
         ((ITER++))
         MEM_BLAST=$(( MEM_BLAST*ITER ))
@@ -497,6 +503,7 @@ fi
 if [ "$RUN_VIRAL_BLAST" == "false" ]
 then
     echo "Skipping viral blast"
+    sleep 1
 fi
 
 
@@ -511,6 +518,5 @@ fi
 if [ "$RUN_VIRAL_SUMMARY" == "false" ]
 then
     echo "Skipping viral summary"
+    sleep 1
 fi
-
-

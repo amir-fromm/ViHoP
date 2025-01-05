@@ -25,7 +25,7 @@ do
     fq2="$(echo ${FQ/L001/L002})" 
     echo "Running spades"
     ## run script
-    rnaspades.py --s 1 $fq1 --s 2 $fq2 -k 21 33 -t $THREADS -o assembly
+    rnaspades.py --s 1 $fq1 --s 2 $fq2 -k 21 33 55 -t $THREADS -o assembly
     echo "Done!"
     sleep 1
 done
