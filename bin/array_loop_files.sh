@@ -3,7 +3,7 @@ DIR=$1
 ARRAY_JOB=$2
 MEM=$3
 
-mkdir -p log
+mkdir -p log_array
 
 ls $DIR > list_files.txt
 
@@ -19,7 +19,7 @@ do
        number=$(bjobs -w | wc -l)
     done
     total_files=$(wc -l < $file_list)
-    job_id=$(bsub -n 1 -R "rusage[mem=$MEM]" -J "my_array_job[1-$total_files]" -o "log/%J_%I.o" -e "log/%J_%I.e" "$ARRAY_JOB $file_list" | awk '{print $2}' | tr -d '<>')
+    job_id=$(bsub -n 1 -R "rusage[mem=$MEM]" -J "my_array_job[1-$total_files]" -o "log_array/%J_%I.o" -e "log_array/%J_%I.e" "$ARRAY_JOB $file_list" | awk '{print $2}' | tr -d '<>')
     job_ids+=($job_id)  # Store the job ID
 done
 
@@ -34,3 +34,4 @@ do
     done # Done checking status of jobs 
 done # The jobs are done
 job_ids=()
+rm list_files_subset*

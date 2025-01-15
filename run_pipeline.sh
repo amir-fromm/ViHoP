@@ -242,9 +242,9 @@ then
     sleep 1
 fi
 
-if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "true" ]
+if [ "$RUN_READ_EDITING" == "true" ]
 then
-    echo "Running read and contig editing protocol"
+    echo "Running read editing protocol"
     sleep 1
     module purge
     # Combine reads to both lanes
@@ -259,6 +259,28 @@ then
             cat $some_path/*.filtered_trimmed_trimmed.fq.gz > $some_path/$CELL.combined.fq.gz
         done
     done
+    if [ "$DELETE_TMP" == "true" ]
+    then
+        echo "Deleting temporary sequencing files"
+        $WD/delete_files.sh $WD/assemble_first_cells/all_cells/
+    fi
+    echo "Done editing reads"
+
+fi
+
+
+if [ "$RUN_READ_EDITING" == "false" ]
+then
+    echo "Skipping read editing"
+    sleep 1
+fi
+
+if [ "$RUN_TRANSCRIPTS_EDITING" == "true" ]
+then
+    echo "Running contig editing protocol"
+    sleep 1
+    module purge
+    cd assemble_first_cells/all_cells/
     # Edit names of transcripts for each cell
     $WD/bin/array_loop_files.sh $WD/assemble_first_cells/all_cells $WD/bin/editing_contigs_array.sh 100
 
@@ -267,12 +289,19 @@ then
     # Remove low-complexity transcripts
     eval "$BBMAP"
     bbduk.sh in=all_cells.transcripts.edit.fasta out=all_cells.transcripts.final.fasta outm=low_complexity.fq entropy=$ENTROPY
-    echo "Done editing reads and contig"
+    if [[ "$DELETE_TMP" == "true" && -s "$WD/assemble_first_cells/all_cells.transcripts.final.fasta" ]]
+    then
+        echo "Deleting temporary sequencing files"
+        rm $WD/assemble_first_cells/all_cells.transcripts.edit.fasta
+        rm -r $WD/assemble_first_cells/all_cells/*/assembly/
+    fi
+    echo "Done editing contigs"
+    
 fi
 
-if [ "$RUN_READ_TRANSCRIPTS_EDITING" == "false" ]
+if [ "$RUN_TRANSCRIPTS_EDITING" == "false" ]
 then
-    echo "Skipping read and contig editing"
+    echo "Skipping contig editing"
     sleep 1
 fi
 
@@ -439,6 +468,11 @@ then
     done # The jobs are done
 
     bin/summarize_annotations.py --output_path $WD --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $LIST_CELLS
+    if [ -e "$PATH_LAST_SUM" ] && [ "$DELETE_TMP" == "true" ]
+    then
+        rm 18s_last_df.csv
+        rm -r mapped_cells_18s/
+    fi 
     echo "Done annotating cells"
 fi
 
@@ -482,7 +516,7 @@ then
         echo "Some jobs failed due to memory. Starting iteration $ITER"
         job_ids=()
             
-        job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
+        job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -word_size 11 -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
 
         # Wait for all jobs to finish
