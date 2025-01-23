@@ -20,6 +20,7 @@ samtools view --threads $THREADS $BAM_FILE | grep -P 'CB:Z:' | awk '{for(i=1;i<=
 # extract only mapped reads subset from bam file
 echo "Extract only mapped reads from bam file"
 samtools view --threads $THREADS -b -F 4 $BAM_FILE  > $MAPPED_BAM
+samtools index $MAPPED_BAM
 
 # get UMI counts per barcode
 echo "Getting UMI counts per barcode"

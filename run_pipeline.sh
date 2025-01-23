@@ -159,7 +159,6 @@ then
     sleep 1
     bin/choose_cells.py --data_dir Combined_RAW/ --sample_table $SAMPLE_TABLE --output_folder Combined_RAW/ --sum $SUM_UMI --count $GENE_COUNT --exp $MAX_UMI 
 
-    tr -d '\r' < Combined_RAW/infected_cells.tsv > Combined_RAW/infected_cells_new.tsv
     echo "Done searching for infected cells"
 fi
 
@@ -178,6 +177,7 @@ then
 
     mkdir -p assemble_first_cells/all_cells
 
+    tr -d '\r' < Combined_RAW/infected_cells.tsv > Combined_RAW/infected_cells_new.tsv
     cp Combined_RAW/infected_cells_new.tsv assemble_first_cells/all_cells/
 
     cd assemble_first_cells/all_cells/
@@ -449,6 +449,26 @@ if [ "$RUN_CELL_ANNOTATION" == "true" ]
 then
     echo "Running cell annotation"
     sleep 1
+
+    BLAST_OUTPUT=$WD/blast_results/all_cells.rRNA.PR2.tsv
+
+    SZ=$(stat -c '%s' $BLAST_OUTPUT)
+
+    if ((SZ < 100000000))
+    then
+        echo "file is smaller than 100MB"
+        MEM_SUMMARY=1000
+        CORES_SUMMARY=5
+    elif ((SZ >= 100000000 && SZ <= 1000000000))
+    then
+        echo "file is between 100MB and 1GB"
+        MEM_SUMMARY=1000
+        CORES_SUMMARY=12
+    else
+        echo "file is larger than 1GB"
+        MEM_SUMMARY=10000
+        CORES_SUMMARY=12
+    fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
