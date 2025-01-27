@@ -176,15 +176,16 @@ then
     sleep 1
 
     mkdir -p assemble_first_cells/all_cells
+    NEW_LIST_CELLS=${LIST_CELLS%.*}_new.tsv
+    tr -d '\r' < $LIST_CELLS > $NEW_LIST_CELLS
 
-    tr -d '\r' < Combined_RAW/infected_cells.tsv > Combined_RAW/infected_cells_new.tsv
-    cp Combined_RAW/infected_cells_new.tsv assemble_first_cells/all_cells/
+    NEW_LIST_CELLS=$(realpath "$NEW_LIST_CELLS")
 
     cd assemble_first_cells/all_cells/
     eval "$SEQTK"
     eval "$TRIM"
 
-    sh $WD/bin/extract_reads_cell_parallel.sh infected_cells_new.tsv
+    sh $WD/bin/extract_reads_cell_parallel.sh $NEW_LIST_CELLS
     ITER=1
     # Check if any files return empty
     grep "completely empty" $WD/log_extract/*e > $WD/tmp/empty_extract.txt
@@ -198,6 +199,7 @@ then
     done
     cd $WD
     echo "Done extracting reads"
+    
 fi
 
 if [ "$RUN_EXTRACT_READS" == "false" ]
@@ -208,30 +210,21 @@ fi
 
 if [ "$RUN_ASSEMBLE_CELLS" == "true" ]
 then
-
+    
     echo "Running cell assembly protocol"
+    NEW_LIST_CELLS=${LIST_CELLS%.*}_new.tsv
+    tr -d '\r' < $LIST_CELLS > $NEW_LIST_CELLS
+
+    NEW_LIST_CELLS=$(realpath "$NEW_LIST_CELLS")
+
     MAX_JOBS=$(( MAX_MEM / ( MEM_SPADES*CORES_SPADES ) ))
     ITER=1
     sleep 1
     module purge
     eval "$SPADES"
-    cd assemble_first_cells/all_cells/
     mkdir -p $WD/log_spades
     rm $WD/log_spades/assemble_cell_*
-    sh $WD/bin/assemble_cell_parallel.sh $WD/assemble_first_cells/all_cells/infected_cells_new.tsv $CORES_SPADES
-    # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
-    grep -l "reaching LSF memory usage limit" $WD/log_spades/assemble_cell_* > $WD/tmp/assembly_limit_use.txt
-
-    while [ -s "$WD/tmp/assembly_limit_use.txt" ] && [ "$ITER" -lt 10 ]
-    do
-        ((ITER++))
-        rm $WD/log_spades/assemble_cell_*
-        CORES_SPADES=$(( ITER*CORES_SPADES ))
-        echo "Some jobs failed due to memory. Starting iteration $ITER"
-        sh $WD/bin/assemble_cell_parallel.sh $WD/assemble_first_cells/all_cells/infected_cells_new.tsv $CORES_SPADES
-
-        grep -l "reaching LSF memory usage limit" $WD/log_spades/assemble_cell_* > $WD/tmp/assembly_limit_use.txt
-    done
+    $WD/bin/submit_array_spades.sh $NEW_LIST_CELLS $WD/bin/run_spades_job.sh
     cd $WD
     echo "Done assembling cells"
 fi
