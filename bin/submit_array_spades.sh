@@ -37,7 +37,7 @@ submit_jobs() {
 
         # Submit the array job
         total_files=$(wc -l < $file_list)
-        job_id=$(bsub -n $THREADS -R "rusage[mem=$memory]" \
+        job_id=$(bsub -n $CORES_SPADES -R "rusage[mem=$memory]" \
             -J "${job_prefix}[1-$total_files]" \
             -o "log_array/%J_%I.o" -e "log_array/%J_%I.e" \
             "$ARRAY_JOB $file_list $THREADS $ASSEMBLY_DIR" | awk '{print $2}' | tr -d '<>')

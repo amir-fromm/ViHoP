@@ -23,10 +23,15 @@ then
     sleep 1
     eval "$CD_HIT"
     eval "$CELL_RANGER"
+    rm -r $REF_NAME
     DB_VIRUS_OUTPUT=$(basename "$DB_VIRUS" .fasta)
-    cd-hit-est -c 0.99 -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.99.fasta
+    
+    if ! ls "$DB_VIRUS_OUTPUT.99.fasta" 1> /dev/null 2>&1
+    then
+        cd-hit-est -c 0.99 -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.99.fasta
+    fi
 
-    tr '|' '#' < $DB_VIRUS_OUTPUT.99.fasta > $DB_VIRUS_OUTPUT.99.clean.fasta
+    tr '|=()' '#' < $DB_VIRUS_OUTPUT.99.fasta > $DB_VIRUS_OUTPUT.99.clean.fasta
 
     awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.99.clean.fasta  >  $DB_VIRUS_OUTPUT.99.final.fasta
 
@@ -61,6 +66,7 @@ then
     do
         echo $dir
         ID=$(basename $dir)
+        rm -r $ID
         # Submit the job and extract the job ID
         job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
@@ -186,17 +192,7 @@ then
     eval "$TRIM"
 
     sh $WD/bin/extract_reads_cell_parallel.sh $NEW_LIST_CELLS
-    ITER=1
-    # Check if any files return empty
-    grep "completely empty" $WD/log_extract/*e > $WD/tmp/empty_extract.txt
-    while [ -s "$WD/tmp/empty_extract.txt" ] && [ "$ITER" -lt 6 ]
-    do
-        ((ITER++))
-        echo "Some jobs failed. Starting iteration $ITER"
-        rm -r $WD/log_extract
-        sh $WD/bin/extract_reads_cell_parallel.sh infected_cells_new.tsv
-        grep "completely empty" $WD/log_extract/*e > $WD/tmp/empty_extract.txt
-    done
+    
     cd $WD
     echo "Done extracting reads"
     
@@ -273,7 +269,7 @@ then
     echo "Running contig editing protocol"
     sleep 1
     module purge
-    cd assemble_first_cells/all_cells/
+    cd $WD/assemble_first_cells/all_cells/
     # Edit names of transcripts for each cell
     $WD/bin/array_loop_files.sh $WD/assemble_first_cells/all_cells $WD/bin/editing_contigs_array.sh 100
 
