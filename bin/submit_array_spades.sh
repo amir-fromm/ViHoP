@@ -9,12 +9,12 @@ THREADS=$(( CORES_SPADES * 2))           # Number of threads for SPAdes
 ASSEMBLY_DIR="assemble_first_cells/all_cells"
 BATCH_SIZE=500      # Number of jobs per batch
 MAX_RUNNING_JOBS=$(( MAX_MEM / ( MEM_SPADES*CORES_SPADES ) )) # Maximum number of concurrent jobs
-ITER=1              # Retry iteration count
+MAX_ITER=5  # Set the maximum number of iterations
 
 
 cd assemble_first_cells/all_cells
 
-mkdir -p log_array tmp
+mkdir -p $WD/log_spades $WD/tmp
 
 # Function to submit jobs in batches
 submit_jobs() {
@@ -39,7 +39,7 @@ submit_jobs() {
         total_files=$(wc -l < $file_list)
         job_id=$(bsub -n $CORES_SPADES -R "rusage[mem=$memory]" \
             -J "${job_prefix}[1-$total_files]" \
-            -o "log_array/%J_%I.o" -e "log_array/%J_%I.e" \
+            -o "$WD/log_spades/%J_%I.o" -e "$WD/log_spades/%J_%I.e" \
             "$ARRAY_JOB $file_list $THREADS $ASSEMBLY_DIR" | awk '{print $2}' | tr -d '<>')
 
         job_ids+=($job_id)
@@ -62,54 +62,57 @@ submit_jobs() {
 submit_jobs $BARCODES $MEM "spades_array_job"
 
 # Retry loop for failed jobs
-retry_needed=true
-while $retry_needed && [ "$ITER" -lt 10 ]; do
-    retry_needed=false
-    failed_jobs_file="tmp/failed_jobs_$ITER.txt"
-    > $failed_jobs_file  # Empty the file
+retry_needed=false
+ITER=1
 
+while [ $ITER -le $MAX_ITER ]; do
     echo "Checking for failed jobs (iteration $ITER)..."
 
-    # Check logs for memory errors
-    grep -l "reaching LSF memory usage limit" log_array/* > tmp/memory_limit_logs.txt || true
-    if [ -s tmp/memory_limit_logs.txt ]; then
+    failed_jobs_file="$WD/tmp/failed_jobs_iteration_${ITER}.txt"
+    > "$failed_jobs_file"  # Clear the file before use
 
-        echo "Jobs failed due to memory issues. Collecting affected jobs..."
-        grep -ohP "(?<=spades_array_job\[)\d+" tmp/memory_limit_logs.txt | sort -u > tmp/memory_failed_indices.txt
+    # **Check logs for memory failures ONLY**
+    grep -l "reaching LSF memory usage limit" "$WD/log_spades/"* > "$WD/tmp/memory_limit_logs.txt" || true
 
-        # Find the corresponding barcodes for these indices
+    if [ -s "$WD/tmp/memory_limit_logs.txt" ]; then
+        echo "Jobs failed due to memory issues. Collecting affected job indices..."
+        
+        # Extract job indices from log filenames
+        grep -ohP "(?<=spades_array_job\[)\d+" "$WD/tmp/memory_limit_logs.txt" | sort -u > "$WD/tmp/memory_failed_indices.txt"
+
+        # Find the corresponding barcodes for these failed indices
         while IFS= read -r index; do
-            sed -n "${index}p" $BARCODES >> $failed_jobs_file
-        done < tmp/memory_failed_indices.txt
+            sed -n "${index}p" "$BARCODES" >> "$failed_jobs_file"
+        done < "$WD/tmp/memory_failed_indices.txt"
     fi
 
-    # Fallback: Check for missing output files
-    while IFS=$'\t' read -r barcode FASTQ; do
-        barcode_no_whitespace=$(echo "$barcode" | tr -d '[:space:]')
-        fastq_basename=$(basename "$FASTQ")
-        barcode_full="$ASSEMBLY_DIR/$barcode_no_whitespace.$fastq_basename"
 
-        if [ ! -f "$barcode_full/assembly/transcripts.fasta" ]; then
-            echo -e "$barcode\t$FASTQ" >> $failed_jobs_file
-        fi
-    done < $BARCODES
-
-    # Retry failed jobs if there are any
-    if [ -s $failed_jobs_file ]; then
+    # **Retry failed jobs if there are any**
+    if [ -s "$failed_jobs_file" ]; then
         retry_needed=true
         ((ITER++))
+        
+        if [ $ITER -gt $MAX_ITER ]; then
+            echo "Maximum retries reached ($MAX_ITER). Exiting..."
+            exit 1
+        fi
+
         echo "Retrying failed jobs with increased memory (iteration $ITER)..."
         MEM=$((MEM * 2))  # Double the memory for retries
-        submit_jobs $failed_jobs_file $MEM "spades_retry_job_$ITER"
-        rm -f log_array/*
+        submit_jobs "$failed_jobs_file" "$MEM" "spades_retry_job_$ITER"
+        
+        # Remove old log files only for failed jobs to avoid unnecessary re-runs
+        xargs rm -f < "$WD/tmp/memory_limit_logs.txt"
+    else
+        echo "All jobs completed successfully!"
+        exit 0
     fi
 done
 
-if ! $retry_needed; then
-    echo "All jobs completed successfully!"
-else
-    echo "Some jobs failed after $ITER iterations. Check logs for more details."
+if [ "$retry_needed" = true ]; then
+    echo "Some jobs failed after $MAX_ITER iterations. Check logs for more details."
 fi
 
+
 # Cleanup
-rm -f tmp/memory_limit_logs.txt tmp/memory_failed_indices.txt tmp/failed_jobs_*.txt
+rm -f $WD/tmp/memory_limit_logs.txt $WD/tmp/memory_failed_indices.txt $WD/tmp/failed_jobs_*.txt
