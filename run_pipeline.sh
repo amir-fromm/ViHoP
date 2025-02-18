@@ -26,24 +26,24 @@ then
     rm -r $REF_NAME
     DB_VIRUS_OUTPUT=$(basename "$DB_VIRUS" .fasta)
     
-    if ! ls "$DB_VIRUS_OUTPUT.99.fasta" 1> /dev/null 2>&1
+    if ! ls "$DB_VIRUS_OUTPUT.$DEDUP.fasta" 1> /dev/null 2>&1
     then
-        cd-hit-est -c 0.99 -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.99.fasta
+        cd-hit-est -c 0.$DEDUP -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.$DEDUP.fasta
     fi
 
-    tr '|=()' '#' < $DB_VIRUS_OUTPUT.99.fasta > $DB_VIRUS_OUTPUT.99.clean.fasta
+    tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
 
-    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.99.clean.fasta  >  $DB_VIRUS_OUTPUT.99.final.fasta
+    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
-    sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.99.final.fasta
-
-
-    bin/create_gtf.sh $DB_VIRUS_OUTPUT.99.final.fasta
-
-    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
+    sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
 
-    bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.99.final.fasta 04_$DB_VIRUS_OUTPUT.99.final.fasta.gene_intervals.gtf
+    bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+
+    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+
+
+    bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.$DEDUP.final.fasta 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
     echo "Done database editing"
 fi
 

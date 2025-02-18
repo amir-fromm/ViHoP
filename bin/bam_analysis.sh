@@ -30,6 +30,6 @@ samtools view --threads $THREADS $MAPPED_BAM | awk '/xf:i:25/ && /CB:Z:/ {for(i=
 echo "Getting mapped reads counts"
 samtools view --threads $THREADS $MAPPED_BAM | awk '($5 == 255 || $1 ~ /^@/) && /CB:Z:/ {for(i=1;i<=NF;i++) if($i ~ /^CB:Z:/) {split($i,a,":"); print a[3]}}' | sort --parallel=$THREADS | uniq -c > $OUT_FOLDER/$SAMPLE.mapped_subset.txt
 
-rm $BAM_FILE
+#rm $BAM_FILE
 
 echo "Done!"
