@@ -27,47 +27,71 @@ for subset_file in barcode_subset_*; do
     total_barcodes=$(wc -l < "$subset_file")
     echo "Submitting jobs for $subset_file with $total_barcodes tasks"
 
-   job_id=$(bsub -n 1 -R "rusage[mem=$MEMORY]" \
+    job_id=$(bsub -n 1 -R "rusage[mem=$MEMORY]" \
     -J "extract_reads[1-$total_barcodes]" \
     -o "$LOG_DIR/%J_%I.o" -e "$LOG_DIR/%J_%I.e" \
     "sh $WD/bin/extract_reads_cell.sh \$(sed -n \${LSB_JOBINDEX}p $subset_file)" \
     | awk '{print $2}' | tr -d '<>')
+    job_ids+=("$job_id")  # <-- ADD JOB ID TO ARRAY
+
 done
 
 # Wait for all jobs to finish
-for id in "${job_ids[@]}"
-do
-    while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN'; do
-        sleep 10  # Wait for 10 seconds before checking again
-    done # Done checking status of jobs 
-done # The jobs are done
+echo "Waiting for all jobs to finish..."
+while bjobs -J "extract_reads" 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+    sleep 10
+done
+echo "All jobs completed!"
 
 
 # Monitor and retry failed jobs if necessary
+
 while :; do
     echo "Monitoring jobs..."
     sleep 10  # Check every 10 seconds
-    failed_jobs=$(grep -l "completely empty" "$LOG_DIR"/*.e)
+
+    # Identify jobs that failed due to memory limit
+    failed_jobs=$(grep -l "reaching LSF memory usage limit" "$LOG_DIR"/*.e || true)
+
     if [ -z "$failed_jobs" ]; then
         echo "All jobs completed successfully!"
         break
-    else
-        retry_count=$((retry_count + 1))  # Increment retry counter
-
-        if [ "$retry_count" -gt "$max_retries" ]; then
-            echo "Maximum retry limit ($max_retries) reached. Exiting."
-            exit 1
-        fi
-        echo "Some jobs failed. Retrying..."
-        MEMORY=$((MEMORY * 2))  # Double memory for retries
-        for failed_job_log in $failed_jobs; do
-            job_index=$(basename "$failed_job_log" | cut -d'_' -f2 | cut -d'.' -f1)
-            barcode=$(sed -n "${job_index}p" "$BARCODE_FILE")
-            echo "Retrying job for barcode: $barcode"
-            bsub -n 1 -R "rusage[mem=$MEMORY]" \
-                -J "extract_retry" \
-                -o "$LOG_DIR/%J.o" -e "$LOG_DIR/%J.e" \
-                "sh $WD/bin/extract_reads_cell.sh $barcode"
-        done
     fi
+
+    retry_count=$((retry_count + 1))  # Increment retry counter
+
+    if [ "$retry_count" -gt "$max_retries" ]; then
+        echo "Maximum retry limit ($max_retries) reached. Exiting."
+        exit 1
+    fi
+
+    num_failed_jobs=$(echo "$failed_jobs" | wc -l)
+    if [ "$num_failed_jobs" -eq 0 ]; then
+        echo "No jobs failed due to memory. Exiting."
+        break
+    fi
+
+    # Calculate new memory per job
+    new_memory=$(($MAX_MEM / num_failed_jobs))
+    
+    # Ensure we do not exceed total memory
+    if [ "$new_memory" -le 0 ]; then
+        echo "Not enough memory available to retry jobs. Exiting."
+        exit 1
+    fi
+
+    echo "Some jobs failed due to memory. Retrying with $new_memory MB per job..."
+
+    # Retry only failed jobs
+    for failed_job_log in $failed_jobs; do
+        job_index=$(basename "$failed_job_log" | cut -d'_' -f2 | cut -d'.' -f1)
+        barcode=$(sed -n "${job_index}p" "$BARCODE_FILE")
+
+        echo "Retrying job for barcode: $barcode with $new_memory MB"
+
+        bsub -n 1 -R "rusage[mem=$new_memory]" \
+            -J "extract_retry_$retry_count" \
+            -o "$LOG_DIR/%J.o" -e "$LOG_DIR/%J.e" \
+            "sh $WD/bin/extract_reads_cell.sh $barcode"
+    done
 done

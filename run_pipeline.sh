@@ -456,7 +456,7 @@ then
     else
         echo "file is larger than 1GB"
         MEM_SUMMARY=10000
-        CORES_SUMMARY=12
+        CORES_SUMMARY=20
     fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
@@ -503,7 +503,7 @@ then
     THREADS=$(( CORES_BLAST*2 ))
     
     job_ids=()
-    job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
+    job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -word_size 11 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
 
     job_ids+=($job_id)  # Store the job ID
 
