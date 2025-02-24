@@ -50,8 +50,8 @@ while :; do
     echo "Monitoring jobs..."
     sleep 10  # Check every 10 seconds
 
-    # Identify jobs that failed due to memory limit
-    failed_jobs=$(grep -l "reaching LSF memory usage limit" "$LOG_DIR"/*.e || true)
+    # Identify jobs that failed
+    failed_jobs=$(grep -l "completely empty" "$LOG_DIR"/*.e || true)
 
     if [ -z "$failed_jobs" ]; then
         echo "All jobs completed successfully!"
