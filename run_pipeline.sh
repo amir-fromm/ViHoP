@@ -28,7 +28,16 @@ then
     
     if ! ls "$DB_VIRUS_OUTPUT.$DEDUP.fasta" 1> /dev/null 2>&1
     then
-        cd-hit-est -c 0.$DEDUP -T 16 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.$DEDUP.fasta
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/CD-HIT. -o $WD/log/CD-HIT.%J.o -e $WD/log/CD-HIT.%J.e  -n $CDHIT_CORES -R "rusage[mem=$CDHIT_MEM] span[ptile=$CDHIT_CORES]"  cd-hit-est -c 0.$DEDUP -T 0 -M 0 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.$DEDUP.fasta | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)  # Store the job ID
+    
+        # Wait for all jobs to finish
+        for id in "${job_ids[@]}"
+        do
+            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+                sleep 10  # Wait for 10 seconds before checking again
+            done # Done checking status of jobs 
+        done # The jobs are done
     fi
 
     tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
@@ -59,19 +68,35 @@ then
     echo "Running Cell ranger count protocol"
     sleep 1
     eval "$CELL_RANGER"
-    ID=$(basename $FASTQDIR)
     DIRPATH="$(dirname "${REF}")"
     job_ids=()
-    for dir in $FASTQDIR*/
-    do
-        echo $dir
-        ID=$(basename $dir)
-        rm -r $ID
-        # Submit the job and extract the job ID
-        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
-        job_ids+=($job_id)  # Store the job ID
-    done
-
+    echo 
+    if [ "$MULTIPLE_FASTQ" == "true" ]
+    then
+        for dir in $FASTQDIR
+        do
+            echo $dir
+            ID=$(basename $dir)
+            echo $ID
+            
+            rm -r $ID
+            # Submit the job and extract the job ID
+            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+            job_ids+=($job_id)  # Store the job ID
+        done
+    else
+        for dir in $FASTQDIR*/
+        do
+            echo $dir
+            ID=$(basename $dir)
+            echo $ID
+            
+            rm -r $ID
+            # Submit the job and extract the job ID
+            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+            job_ids+=($job_id)  # Store the job ID
+        done
+    fi
     # Wait for all jobs to finish
     for id in "${job_ids[@]}"
     do
