@@ -15,7 +15,7 @@ LOG_DIR="$WD/log_extract"
 # Retry logic with a maximum iteration limit
 max_retries=10  # Set a maximum number of retries
 retry_count=0    # Initialize retry counter
-
+rm -r $LOG_DIR
 mkdir -p $LOG_DIR
 
 # Split barcode file for array jobs (500 jobs per batch)

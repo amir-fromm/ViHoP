@@ -107,10 +107,10 @@ def filter_df(df, identity, length):
 # In[21]:
 
 
-def edit_df(filtered_df):
+def edit_df(filtered_df, count):
     global sum_df
     sum_df = filtered_df.groupby(['cell','Annotation'])['query id'].agg('count').reset_index()
-    
+    sum_df = sum_df[sum_df['query id'] >= count]
 
     sum_df['cell'] = sum_df['cell'].apply(lambda x: '.'.join(x.split('.', 2)[:2]))
 
@@ -140,14 +140,20 @@ def get_args():
     parser.add_argument("--replacement_file",help = "A tab delimited file for replacing taxonomic names and assigning colors for each taxonomic group", required=True)
     parser.add_argument("--identity", help = "Threshold for read percent homology", default=99, type = float)
     parser.add_argument("--length", help = "Threshold for read alignment length", default=85, type = float)
+    parser.add_argument("--count", help = "Threshold for number of reads to consider", default=10, type = float)
 
     return parser.parse_args()
 
-def main(last_path,
-last_summary,
-replacement_file,
-output_path):
+def main():
     
+    args = get_args()
+    last_path = args.last_path
+    last_summary = args.last_summary
+    replacement_file = args.replacement_file
+    output_path = args.output_path
+    identity = args.identity
+    length = args.length
+    count = args.count
 
     if last_summary != 'false':
 
@@ -166,20 +172,10 @@ output_path):
     df_dedup = last_df.drop_duplicates(subset = ["query id",'Annotation']).drop_duplicates('query id',keep = False)
     edited_df = filter_df(df_dedup, identity, length)
 
-    final_df = edit_df(edited_df)
+    final_df = edit_df(edited_df, count)
 
     final_df.to_csv(output_path + '/18s_mapping_sum.csv')
 
 
 if __name__ == "__main__":
-    args = get_args()
-    last_path = args.last_path
-    last_summary = args.last_summary
-    replacement_file = args.replacement_file
-    output_path = args.output_path
-    identity = args.identity
-    length = args.length
-    main(last_path,
-         last_summary,
-         replacement_file,
-         output_path)
+    main()

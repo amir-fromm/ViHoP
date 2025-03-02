@@ -34,11 +34,11 @@ def edit_dfs(list_cells,last_df,blast_df):
 # merges the dataframes.
 # Filter results by creteria: at least 10 mapped cells (last), at least 90% of reads match one taxa (last), at least 90% of alignment length match one taxa (blast)
 # checks if last annotation equals blast annotation
-def summarize_df(df_cells,last_df,blast_df):
+def summarize_df(df_cells,last_df,blast_df,count,percent):
     merge_on = ['cell','Sample','Barcode']
     full_db = pd.merge(pd.merge(blast_df, last_df, on = merge_on,how='outer'),df_cells[['cell','Sample','Barcode']] ,on = merge_on,how='outer')
     # Check if all pass threshold
-    sum_df = full_db[(full_db['last # mapped reads'] >= 10 )  & (full_db['last percent mapped reads'] >= 0.9) & (full_db['Blast percent alignment'] >= 0.9)]
+    sum_df = full_db[(full_db['last # mapped reads'] >= count )  & (full_db['last percent mapped reads'] >= percent) & (full_db['Blast percent alignment'] >= percent)]
     sum_df = sum_df[sum_df['Blast Annotation'] == sum_df['last Annotation']]
     return full_db,sum_df
 
@@ -52,6 +52,8 @@ def get_args():
     parser.add_argument("--last_path", help = "Path for all the last files", required=True)
     parser.add_argument("--blast_path", help = "Path for all the Blast files", required=True)
     parser.add_argument("--cell_path", help = "Path for all the last files", required=True)
+    parser.add_argument("--count_reads", help = "Threshold for minimum number of mapped reads to have annotation", required=True) 
+    parser.add_argument("--percent", help = "Threshold for percent mapped reads/alignment length to determine if chimeric or not", required=True) 
     return parser.parse_args() 
 
 def main():
@@ -63,7 +65,10 @@ def main():
     print('Editing annotation tables')
     list_cells,last_df,blast_df = edit_dfs(list_cells,last_df,blast_df)
     print('Summerizing annotation tables')
-    full_db, sum_df = summarize_df(list_cells,last_df,blast_df)
+    count=int(args.count_reads)
+    percent=int(args.percent)
+    percent=percent/100
+    full_db, sum_df = summarize_df(list_cells,last_df,blast_df,count,percent)
     print('Writing results:', sum_df.shape[0], 'cells were annotated and are not chimeric')
     write_files(full_db, sum_df, args.output_path)
     print('Done')

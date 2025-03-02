@@ -12,13 +12,15 @@ def get_args():
     parser.add_argument("--metapr2_file",help = "metapr2_file = The output files for metapr2 blast file", required = True)
     parser.add_argument("--pr2_file",help = "pr2_file =  The output files for pr2 blast file" , required=True)
     parser.add_argument("--replacement_file",help = "A tab delimited file for replacing taxonomic names and assigning colors for each taxonomic group", required=True)
-  
+    parser.add_argument("--identity", help = "Threshold for read percent homology", default=99, type = float)
+    parser.add_argument("--length", help = "Threshold for alignment length", default=100, type = float)
+
     return parser.parse_args()
 
 
 # Dedup functions remove conflicting contigs (contigs with the best match for multiple annotations)
 # and drop ambiguous cells (cells with contigs matching 18S rRNA of multiple organisms)
-def dedup_data(path,file,data_type,replacement_df,cells):
+def dedup_data(path,file,data_type,replacement_df,cells, length, identity):
     data = load_data(path,file,data_type)
     global super_dict
     super_dict = replacement_process(data,replacement_df)
@@ -26,7 +28,7 @@ def dedup_data(path,file,data_type,replacement_df,cells):
     data['barcode'] = data['cell'].str.split(".", expand = True)[0]
     if cells != -1:
         data = data[data['cell'].isin(cells)]
-    data = subset_results(data)
+    data = subset_results(data, length, identity)
     data = data.drop_duplicates(subset = ["qseqid",'Annotation']).drop_duplicates('qseqid',keep = False)
     data = get_chimeric_cells(data)
 
@@ -56,10 +58,10 @@ def load_data(path,file,db):
 # In[25]:
 
 
-def subset_results(sample_data):
+def subset_results(sample_data, length, identity):
     
     print("Filtering queries by by length...")
-    sample_data = sample_data[(sample_data['length'] >= 100)]
+    sample_data = sample_data[(sample_data['length'] >= length)]
     
     print("sorting data...")
     sample_data = sample_data.sort_values(by = ['qseqid','bitscore'],ascending = False)
@@ -69,7 +71,7 @@ def subset_results(sample_data):
     sample_data = sample_data[sample_data['rank'] == 1]
     
     print("Filtering queries by identity...")
-    sample_data = sample_data[(sample_data['pident'] >= 99)]
+    sample_data = sample_data[(sample_data['pident'] >= identity)]
     return sample_data
 
 
@@ -205,19 +207,23 @@ def find_chimeras(df):
     return chimeric_contig
 
 
-def main(path,
-         metapr2_file,
-         pr2_file,
-        replacement_file):
- 
+def main():
+    args = get_args()
+    path = args.path
+    metapr2_file = args.metapr2_file
+    pr2_file = args.pr2_file
+    replacement_file = args.replacement_file
+    length = args.length
+    identity = args.identity
     cells = -1
+    print("Running blast summary for identity", identity, "and alignment length", length)
     names_df = pd.read_table(path+ "/" + replacement_file, sep = "\t")
     if 'metapr2_data' not in globals() or 'pr2_data' not in globals():
         global metapr2_data, pr2_data
         metapr2_data = dedup_data(path = path,
-            file = metapr2_file , data_type = "metaPR2",replacement_df = names_df, cells = cells)
+            file = metapr2_file , data_type = "metaPR2",replacement_df = names_df, cells = cells, length = length, identity = identity)
         pr2_data = dedup_data(path = path,
-            file = pr2_file , data_type = "PR2",replacement_df = names_df,cells = cells)
+            file = pr2_file , data_type = "PR2",replacement_df = names_df,cells = cells, length = length, identity = identity)
 
     data_annotations = annotation_data(pr2_data,metapr2_data)
 
@@ -245,11 +251,7 @@ Contains the following columns:
 
 '''
 if __name__ == "__main__":
-   args = get_args()
-   main(args.path,
-        args.metapr2_file,
-        args.pr2_file,
-        args.replacement_file)
+   main()
 
 
 

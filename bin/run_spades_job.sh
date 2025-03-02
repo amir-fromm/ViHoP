@@ -18,19 +18,37 @@ BARCODE_FULL="$BARCODE_NO_WHITESPACE.$FASTQ_BASENAME"
 
 if [ ! -f "$BARCODE_FULL/assembly/transcripts.fasta" ]; then
     mkdir -p "$BARCODE_FULL/assembly"
+    # Detect all unique L00X lane identifiers
+    read_sets=($(find "$BARCODE_FULL" -type f -name "*_L00*_*.filtered_trimmed_trimmed.fq.gz" | sed -E 's/.*_L00([0-9])_.*/L00\1/' | sort -u))
 
-    for fq1 in $BARCODE_FULL/*L001*.filtered_trimmed_trimmed.fq.gz
-    do
-        fq2=$(echo ${fq1/L001/L002}) # Match the second pair
-        echo $fq1
-        if [ -f "$fq2" ]; then
-            echo "Running SPAdes for $BARCODE_NO_WHITESPACE..."
-            rnaspades.py --s1 "$fq1" --s2 "$fq2" -k 21,33,55 -t $THREADS -o "$BARCODE_FULL/assembly"
-            echo "Assembly completed for $BARCODE_NO_WHITESPACE!"
-        else
-            echo "Warning: Paired file $fq2 not found for $fq1."
-        fi
+    # Debug: Show detected read sets
+    echo "Detected read sets: ${read_sets[@]}"
+
+    # Initialize SPAdes command
+    SPADES_CMD="rnaspades.py -k 21,33,55 -t $THREADS -o $BARCODE_FULL/assembly"
+
+    # Track argument index
+    index=1
+
+    for read_set in "${read_sets[@]}"; do
+        # Find all FASTQ files matching this read set
+        fq_files=($(find "$BARCODE_FULL" -type f -name "*${read_set}_*.filtered_trimmed_trimmed.fq.gz"))
+
+        for fq in "${fq_files[@]}"; do
+            if [ -f "$fq" ]; then
+                SPADES_CMD+=" --s$index $fq"
+                ((index++))
+            else
+                echo "Warning: Missing file for read set $read_set!"
+            fi
+        done
     done
+
+    echo "Running SPAdes for $BARCODE_NO_WHITESPACE..."
+    echo "$SPADES_CMD"  # Debugging: Print final SPAdes command
+    eval "$SPADES_CMD"
+    echo "Assembly completed for $BARCODE_NO_WHITESPACE!"
+
 else
     echo "Assembly already exists for $BARCODE_NO_WHITESPACE. Skipping..."
 fi
