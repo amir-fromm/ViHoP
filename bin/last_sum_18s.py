@@ -93,7 +93,7 @@ def dedup_df(df):
 
 
 
-def filter_df(df, identity, length):
+def filter_df(df):
 # Remove reads that are mapped to different classes
     
     
@@ -107,9 +107,9 @@ def filter_df(df, identity, length):
 # In[21]:
 
 
-def edit_df(filtered_df, count):
+def edit_df(filtered_df):
     global sum_df
-    sum_df = filtered_df.groupby(['cell','Annotation'])['query id'].agg('count').reset_index()
+    sum_df = filtered_df.groupby(['cell',level])['query id'].agg('count').reset_index()
     sum_df = sum_df[sum_df['query id'] >= count]
 
     sum_df['cell'] = sum_df['cell'].apply(lambda x: '.'.join(x.split('.', 2)[:2]))
@@ -124,23 +124,23 @@ def edit_df(filtered_df, count):
 # In[22]:
 
 
-def load_last_tables(last_path, output_path):
+def load_last_tables(last_path):
     
     last_df = load_last(last_path)
-    last_df.to_csv(output_path + '/18s_last_df.csv')
+    last_df.to_csv('18s_last_df.csv')
     return last_df
 
 
 
 def get_args():
     parser = ArgumentParser(description="Choose a subset of cells that pass a criteria")
-    parser.add_argument("--output_path", help = "Path for the output files", required=True)
     parser.add_argument("--last_path", help = "Path for all the last files", required=True)
     parser.add_argument("--last_summary", help = "Path for the summarized last table", default='False')
     parser.add_argument("--replacement_file",help = "A tab delimited file for replacing taxonomic names and assigning colors for each taxonomic group", required=True)
     parser.add_argument("--identity", help = "Threshold for read percent homology", default=99, type = float)
     parser.add_argument("--length", help = "Threshold for read alignment length", default=85, type = float)
     parser.add_argument("--count", help = "Threshold for number of reads to consider", default=10, type = float)
+    parser.add_argument("--level", help = " # The taxonomic level by which to subset the data. Default: 'Annotation' (The aggregated common names, by 'replacement_taxa.tsv')", default='Annotation')
 
     return parser.parse_args()
 
@@ -150,17 +150,17 @@ def main():
     last_path = args.last_path
     last_summary = args.last_summary
     replacement_file = args.replacement_file
-    output_path = args.output_path
+    global identity, level, count, length
     identity = args.identity
     length = args.length
     count = args.count
-
+    level = args.level
     if last_summary != 'false':
 
         last_df = pd.read_csv(last_summary)
 
     else:
-        last_df = load_last_tables(last_path, output_path)
+        last_df = load_last_tables(last_path)
 
 
     replacement_df = pd.read_table(replacement_file, sep = "\t")
@@ -169,12 +169,12 @@ def main():
 
     last_df['Annotation'] = last_df['Family'].map(super_dict)
 
-    df_dedup = last_df.drop_duplicates(subset = ["query id",'Annotation']).drop_duplicates('query id',keep = False)
-    edited_df = filter_df(df_dedup, identity, length)
+    df_dedup = last_df.drop_duplicates(subset = ["query id",level]).drop_duplicates('query id',keep = False)
+    edited_df = filter_df(df_dedup)
 
-    final_df = edit_df(edited_df, count)
+    final_df = edit_df(edited_df)
 
-    final_df.to_csv(output_path + '/18s_mapping_sum.csv')
+    final_df.to_csv('last_summary.'+ level + '.csv')
 
 
 if __name__ == "__main__":

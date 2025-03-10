@@ -14,13 +14,14 @@ def get_args():
     parser.add_argument("--replacement_file",help = "A tab delimited file for replacing taxonomic names and assigning colors for each taxonomic group", required=True)
     parser.add_argument("--identity", help = "Threshold for read percent homology", default=99, type = float)
     parser.add_argument("--length", help = "Threshold for alignment length", default=100, type = float)
+    parser.add_argument("--level", help = " # The taxonomic level by which to subset the data. Default: 'Annotation' (The aggregated common names, by 'replacement_taxa.tsv')", default='Annotation')
 
     return parser.parse_args()
 
 
 # Dedup functions remove conflicting contigs (contigs with the best match for multiple annotations)
 # and drop ambiguous cells (cells with contigs matching 18S rRNA of multiple organisms)
-def dedup_data(path,file,data_type,replacement_df,cells, length, identity):
+def dedup_data(path,file,data_type,replacement_df,cells):
     data = load_data(path,file,data_type)
     global super_dict
     super_dict = replacement_process(data,replacement_df)
@@ -28,8 +29,9 @@ def dedup_data(path,file,data_type,replacement_df,cells, length, identity):
     data['barcode'] = data['cell'].str.split(".", expand = True)[0]
     if cells != -1:
         data = data[data['cell'].isin(cells)]
-    data = subset_results(data, length, identity)
-    data = data.drop_duplicates(subset = ["qseqid",'Annotation']).drop_duplicates('qseqid',keep = False)
+
+    data = subset_results(data)
+    data = data.drop_duplicates(subset = ["qseqid",level]).drop_duplicates('qseqid',keep = False)
     data = get_chimeric_cells(data)
 
     return data
@@ -58,7 +60,7 @@ def load_data(path,file,db):
 # In[25]:
 
 
-def subset_results(sample_data, length, identity):
+def subset_results(sample_data):
     
     print("Filtering queries by by length...")
     sample_data = sample_data[(sample_data['length'] >= length)]
@@ -93,10 +95,10 @@ def annotation_data(pr2_data,metapr2_data):
     print("Annotating cells")
     global data_annotations
     # create the data annotations dataset
-    sub_pr2 = pr2_data[['qseqid','cell','Annotation','length']]
+    sub_pr2 = pr2_data[['qseqid','cell',level,'length']]
     sub_pr2['cell'] = sub_pr2['cell'].str.strip()
     
-    sub_metapr2 = metapr2_data[['qseqid','cell','Annotation','length']]
+    sub_metapr2 = metapr2_data[['qseqid','cell',level,'length']]
     sub_metapr2['cell'] = sub_metapr2['cell'].str.strip()
     
     data_annotations = pd.concat([sub_pr2,sub_metapr2])
@@ -105,11 +107,11 @@ def annotation_data(pr2_data,metapr2_data):
     # remove ambigous contigs between the databases
     data_annotations = data_annotations.sort_values(by = 'length', ascending = False)
         
-    data_annotations = data_annotations.drop_duplicates(subset = ["qseqid",'Annotation'])
+    data_annotations = data_annotations.drop_duplicates(subset = ["qseqid",level])
     
 
     data_annotations['percent'] = data_annotations['length'] / data_annotations.groupby('cell')['length'].transform('sum')
-    data_annotations = data_annotations.groupby(['cell','Annotation',]).agg({'percent':'sum','length':'sum'}).reset_index()
+    data_annotations = data_annotations.groupby(['cell',level,]).agg({'percent':'sum','length':'sum'}).reset_index()
     return data_annotations
 
 
@@ -139,7 +141,7 @@ def replacement_process(df_top,replacement_df):
 
 
 def find_chimeras(df):
-    df = df.drop_duplicates(subset = ["qseqid",'Annotation'])
+    df = df.drop_duplicates(subset = ["qseqid",level])
     # Sort the dataframe by 'Gene ID' and 'Col1' for easier processing
     df = df.sort_values(by=['qseqid', 'qstart'])
 
@@ -213,22 +215,24 @@ def main():
     metapr2_file = args.metapr2_file
     pr2_file = args.pr2_file
     replacement_file = args.replacement_file
+    global level, length, identity
     length = args.length
     identity = args.identity
+    level = args.level 
     cells = -1
     print("Running blast summary for identity", identity, "and alignment length", length)
     names_df = pd.read_table(path+ "/" + replacement_file, sep = "\t")
     if 'metapr2_data' not in globals() or 'pr2_data' not in globals():
         global metapr2_data, pr2_data
         metapr2_data = dedup_data(path = path,
-            file = metapr2_file , data_type = "metaPR2",replacement_df = names_df, cells = cells, length = length, identity = identity)
+            file = metapr2_file , data_type = "metaPR2",replacement_df = names_df, cells = cells)
         pr2_data = dedup_data(path = path,
-            file = pr2_file , data_type = "PR2",replacement_df = names_df,cells = cells, length = length, identity = identity)
+            file = pr2_file , data_type = "PR2",replacement_df = names_df,cells = cells)
 
     data_annotations = annotation_data(pr2_data,metapr2_data)
 
-    data_annotations.to_csv(path + "/annotation_permissive.csv")
-    data_annotations.drop_duplicates(['cell','Annotation']).groupby('cell')['Annotation'].apply(list).to_csv(path + "/annotation_permissive_groups.csv")
+    data_annotations.to_csv(path + "/blast_summary." + level + ".csv")
+   # data_annotations.drop_duplicates(['cell',level]).groupby('cell')[level].apply(list).to_csv(path + "/annotation_permissive_groups.csv")
 
 
 

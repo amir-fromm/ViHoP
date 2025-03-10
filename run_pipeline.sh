@@ -486,12 +486,12 @@ then
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/blast_sum.py --path $WD --metapr2_file /blast_results/all_cells.rRNA.metaPR2.tsv --pr2_file /blast_results/all_cells.rRNA.PR2.tsv --replacement_file $REPLACEMENT_FILE --identity=$BLAST_IDENTITY --length=$BLAST_LENGTH | awk '{print $2}' | tr -d '<>')
+        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/blast_sum.py --path $WD --metapr2_file /blast_results/all_cells.rRNA.metaPR2.tsv --pr2_file /blast_results/all_cells.rRNA.PR2.tsv --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id1)  # Store the job ID
     fi
     if [ "$SUMMARIZE_LAST" == "true" ]
     then
-        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s.py  --output_path $WD --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH | awk '{print $2}' | tr -d '<>')
+        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s.py --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id2)  # Store the job ID
     fi
     # Wait for all jobs to finish
@@ -500,8 +500,10 @@ then
             sleep 10  # Wait for 10 seconds before checking again
         done # Done checking status of jobs 
     done # The jobs are done
+    PATH_LAST_SUM=last_summary."$TAXONOMIC_LEVEL".csv 
+    PATH_BLAST_SUM=blast_summary."$TAXONOMIC_LEVEL".csv 
     LAST_COUNT_FINAL=$(( LAST_COUNT*2 )) # The minimum number of reads mapped in last must be at least double the lower threshold (to avoid the case of 10 reads mapped to one, 9 mapped to second )
-    bin/summarize_annotations.py --output_path $WD --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $LIST_CELLS --count_reads $LAST_COUNT_FINAL --percent $THRESHOLD_CHIMERIC
+    bin/summarize_annotations.py --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $LIST_CELLS --count_reads $LAST_COUNT_FINAL --percent $THRESHOLD_CHIMERIC --level $TAXONOMIC_LEVEL
     if [ -e "$PATH_LAST_SUM" ] && [ "$DELETE_TMP" == "true" ]
     then
         rm 18s_last_df.csv

@@ -15,7 +15,7 @@ MAPPED_BAM=${BAM_FILE%.bam}.mapped.bam
 
 # get total reads per barcode for all barcodes (with at least one read)
 #echo "Getting total reads per barcode"
-samtools view --threads $THREADS $BAM_FILE | grep -P 'CB:Z:' | awk '{for(i=1;i<=NF;i++) if($i ~ /^CB:Z:/) {split($i,a,":"); print a[3]}}' | sort --parallel=$THREADS | uniq -c > $OUT_FOLDER/$SAMPLE.reads_per_barcode.txt
+#samtools view --threads $THREADS $BAM_FILE | grep -P 'CB:Z:' | awk '{for(i=1;i<=NF;i++) if($i ~ /^CB:Z:/) {split($i,a,":"); print a[3]}}' | sort --parallel=$THREADS | uniq -c > $OUT_FOLDER/$SAMPLE.reads_per_barcode.txt
 
 # extract only mapped reads subset from bam file
 echo "Extract only mapped reads from bam file"
