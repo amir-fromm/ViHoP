@@ -9,7 +9,7 @@ echo "Pulling sequence headers by cell barcode"
 # Input arguments
 BARCODE_FILE=$1 # barcodes_and_fastq_paths.txt
 MEMORY=$MEM_EXTRACT  # Initial memory allocation per job
-MAX_JOBS=MAX_JOBS=$(( MAX_MEM /  MEM_EXTRACT ))
+MAX_JOBS=$(( MAX_MEM /  MEM_EXTRACT ))
 LOG_DIR="$WD/log_extract"
 
 # Retry logic with a maximum iteration limit
