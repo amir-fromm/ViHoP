@@ -91,7 +91,7 @@ while [ $ITER -le $MAX_ITER ]; do
     if [ -s "$failed_jobs_file" ]; then
         retry_needed=true
         ((ITER++))
-        
+        rm $WD/log_spades/*
         if [ $ITER -gt $MAX_ITER ]; then
             echo "Maximum retries reached ($MAX_ITER). Exiting..."
             exit 1

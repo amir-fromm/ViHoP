@@ -9,8 +9,8 @@ from argparse import ArgumentParser
 
 def load_data(path_cells, path_last,path_blast):
     list_cells = pd.read_table(path_cells, names = ['cell', 'path'])
-    last_df = pd.read_csv(path_last, index_col=0)
-    blast_df = pd.read_csv(path_blast, index_col=0)
+    last_df = pd.read_csv(path_last)
+    blast_df = pd.read_csv(path_blast)
     return list_cells,last_df,blast_df
 
 # Create the metadata columns for the list of infected cells
@@ -42,14 +42,15 @@ def summarize_df(last_df,blast_df):
     merge_on = ['cell','Sample','Barcode']
     full_db = pd.merge(pd.merge(blast_df, last_df, on = merge_on,how='outer'),df_cells[['cell','Sample','Barcode']] ,on = merge_on,how='outer')
     # Check if all pass threshold
-    print(full_db.columns)
+    full_db = full_db[[ "cell", "Barcode", "Sample", "Blast Annotation", "Blast percent alignment", "Blast max alignment length", "last Annotation", "last number of mapped reads", "last percent mapped reads"]]
+    full_db = full_db.sort_values(['cell','Blast percent alignment', 'last number of mapped reads'], ascending=[True, False, False])
     sum_df = full_db[(full_db['last number of mapped reads'] >= count )  & (full_db['last percent mapped reads'] >= percent) & (full_db['Blast percent alignment'] >= percent)]
     sum_df = sum_df[sum_df['Blast Annotation'] == sum_df['last Annotation']]
     return full_db,sum_df
 
 def write_files(full_db, sum_df):
-    full_db.to_csv('full_annotation.'+ level + '.csv')
-    sum_df.to_csv('summarized_annotation.'+ level + '.csv')
+    full_db.to_csv('full_annotation.'+ level + '.csv', index = False)
+    sum_df.to_csv('summarized_annotation.'+ level + '.csv', index = False)
 
 def get_args():
     parser = ArgumentParser(description="Choose a subset of cells that pass a criteria")

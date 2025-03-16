@@ -231,7 +231,7 @@ def main():
 
     data_annotations = annotation_data(pr2_data,metapr2_data)
 
-    data_annotations.to_csv(path + "/blast_summary." + level + ".csv")
+    data_annotations.to_csv(path + "/blast_summary." + level + ".csv", index=False)
    # data_annotations.drop_duplicates(['cell',level]).groupby('cell')[level].apply(list).to_csv(path + "/annotation_permissive_groups.csv")
 
 

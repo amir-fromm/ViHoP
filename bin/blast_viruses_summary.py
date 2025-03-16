@@ -21,8 +21,13 @@ def edit_blast_table(tmp_df, dict_annotations):
 
 def subset_blast_table(tmp_df, identity, length):
     clean_df = tmp_df.copy()
+
+    print("Filtering by identity and alignment length...")
     clean_df = clean_df[(clean_df['pident'] >= identity) & (clean_df['length'] >= length)]
-    clean_df = clean_df[clean_df['Annotation'] != 'Metazoa']
+    print("Choosing only best hit...")
+    clean_df['rank'] = clean_df.groupby(['qseqid'])['bitscore'].rank("min",ascending = False)
+    clean_df = clean_df[clean_df['rank'] == 1]
+   # clean_df = clean_df[clean_df['Annotation'] != 'Metazoa']
     return clean_df
 
 
@@ -69,7 +74,7 @@ def saving_files(output_path,tmp_df):
         for seq in tmp_df['qseqid'].unique():
             f.write(f"{seq}\n")
             
-    tmp_df.to_csv(output_path + "/summary_blast_viruses.txt", sep = '\t')
+    tmp_df.to_csv(output_path + "/summary_blast_viruses.txt", sep = '\t', index = False)
 
 
 # In[ ]:

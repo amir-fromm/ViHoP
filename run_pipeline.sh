@@ -266,12 +266,11 @@ then
     for some_path in */
     do
         CELL=$(basename $some_path)
-        for file in $some_path/*.filtered_trimmed_trimmed.fq.gz
-        do
-            SUBSTRING="${file##*/}"
+    #    do
+            #SUBSTRING="${file##*/}"
            # ID="$(awk -F '_L' '{print $1}' <<< "$SUBSTRING" )"
-            cat $some_path/*.filtered_trimmed_trimmed.fq.gz > $some_path/$CELL.combined.fq.gz
-        done
+        cat $some_path/*.filtered_trimmed_trimmed.fq.gz > $some_path/$CELL.combined.fq.gz
+       # done
     done
     if [ "$DELETE_TMP" == "true" ]
     then
@@ -491,7 +490,7 @@ then
     fi
     if [ "$SUMMARIZE_LAST" == "true" ]
     then
-        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s.py --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
+        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s_multi.py --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id2)  # Store the job ID
     fi
     # Wait for all jobs to finish
@@ -525,6 +524,13 @@ then
     rm $WD/log/blastn_virus*
     sleep 1
     eval "$BLAST"
+
+    if ! ls "$BLAST_DB_VIRUS" 1> /dev/null 2>&1 ; then
+        DIR="$(dirname "${BLAST_DB_VIRUS_FASTA}")"
+        FILE="$(basename "${BLAST_DB_VIRUS}")"
+        echo "Creating blast database for $FILE in directory $DIR"
+        makeblastdb -in $BLAST_DB_VIRUS_FASTA -blastdb_version 5 -title "$FILE" -dbtype nucl -out $DIR/$FILE
+    fi
     mkdir -p blast_results
     ITER=1
     THREADS=$(( CORES_BLAST*2 ))
