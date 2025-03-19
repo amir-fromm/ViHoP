@@ -477,10 +477,17 @@ then
         echo "file is between 100MB and 1GB"
         MEM_SUMMARY=1000
         CORES_SUMMARY=12
-    else
-        echo "file is larger than 1GB"
+
+    elif ((SZ >= 1000000000 && SZ <= 10000000000))
+    then
+        echo "file is between 1GB and 10GB"
         MEM_SUMMARY=10000
         CORES_SUMMARY=20
+
+    else
+        echo "file is larger than 10GB"
+        MEM_SUMMARY=20000
+        CORES_SUMMARY=36
     fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
