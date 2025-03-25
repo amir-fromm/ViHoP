@@ -406,47 +406,8 @@ then
     rm $WD/log_last/*
     eval "$SEQTK"
     ls assemble_first_cells/all_cells/*/*combined.fq.gz > $WD/tmp/combined_reads.txt
-    sh bin/lastal_loop_18s.sh $WD/tmp/combined_reads.txt
-    
-    grep -l "reaching LSF memory usage limit" $WD/log_last/18s_lastal* > $WD/tmp/18s_lastal_limit_use.txt
-    ITER=1
-    find $WD/mapped_cells_18s -size 0 -delete
-    while [ -s "$WD/tmp/18s_lastal_limit_use.txt" ] && [ "$ITER" -lt 6 ]
-    do
-        ((ITER++))
-        MEMORY_LAST=$(( MEMORY_LAST*ITER ))
-        MAX_JOBS=$(( MAX_MEM / ( MEMORY_LAST*CORES_LAST ) ))
-        echo "$MAX_JOBS"
-        echo "Some jobs failed due to memory. Starting iteration $ITER"
-        job_ids=()
-        while IFS= read -r line; do
-            command=$(grep "bin/lastal_loop_18s_run.sh" $line)
-            cell=$(echo $command | awk '{print $NF}')
-            echo $command
-            number=$(bjobs -w | wc -l) # get the numbers of jobs running
-            # Limit number of jobs
-            while [ "$number" -gt $MAX_JOBS ];do 
-            
-                echo "$number"
-                sleep 1
-                number=$(bjobs -w | wc -l)
-            done
-
-            job_id=$(bsub -q short -J $WD/log_last/18s_lastal.$cell.$ITER. -o $WD/log_last/18s_lastal.$cell.$ITER.%J.o -e $WD/log_last/18s_lastal.$cell.$ITER.%J.e  -n $CORES_LAST -R "rusage[mem=$MEMORY_LAST] span[ptile=$CORES_LAST]" $command | awk '{print $2}' | tr -d '<>')
-            job_ids+=($job_id)  # Store the job ID
-            
-        done < $WD/tmp/18s_lastal_limit_use.txt
-
-        # Wait for all jobs to finish
-        for id in "${job_ids[@]}"
-        do
-            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-                sleep 10  # Wait for 10 seconds before checking again
-            done # Done checking status of jobs 
-        done # The jobs are done
-        grep -l "reaching LSF memory usage limit" $WD/log_last/18s_lastal*.$ITER.*.o > $WD/tmp/18s_lastal_limit_use.txt
-    
-    done
+  #  sh bin/lastal_loop_18s.sh $WD/tmp/combined_reads.txt
+    sh bin/lastal_array_18s.sh $WD/tmp/combined_reads.txt
     echo "Done running 18s last search"
 fi
 
@@ -486,8 +447,8 @@ then
 
     else
         echo "file is larger than 10GB"
-        MEM_SUMMARY=20000
-        CORES_SUMMARY=36
+        MEM_SUMMARY=25000
+        CORES_SUMMARY=24
     fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
