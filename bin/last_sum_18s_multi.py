@@ -49,12 +49,9 @@ def replacement_process(df_top, replacement_df):
 
 def dedup_df(df):
     filtered_df_copy = df.copy()
-    filtered_df_copy[["subject_id",
-                      "Clade", "Supergroup", "Division", "Class", "Order", "Family", 
-                      "Genus", "Species"]] = filtered_df_copy['subject id'].str.split("|", expand=True)
+    filtered_df_copy[["subject_id", "rrna_type", "rrna_loc", "clone", "Domain","Clade", "Supergroup", "Division", "Class", "Order", "Family", "Genus", "Species"]] = filtered_df_copy['subject id'].str.split("|", expand=True)
+    filtered_df_copy = filtered_df_copy[(filtered_df_copy['rrna_type'] == "18S_rRNA")]
     
-    ["sseqid","Clade","Supergroup","Division","Class","Order","Family","Genus","Species"]
-  #  filtered_df_copy = filtered_df_copy[(filtered_df_copy['rrna_type'] == "18S_rRNA")]
     
     # Get only the best hit for each read
     filtered_df_copy['rank'] = filtered_df_copy.groupby(['query id'])['bit score'].rank("min", ascending=False)

@@ -69,12 +69,12 @@ def virus_taxonomy(new_df, dict_taxonomy):
 
 
 # Saving files
-def saving_files(output_path,tmp_df):
+def saving_files(output_path,output_name,tmp_df):
     with open (output_path + "/virus_contigs.txt", "w") as f:
         for seq in tmp_df['qseqid'].unique():
             f.write(f"{seq}\n")
             
-    tmp_df.to_csv(output_path + "/summary_blast_viruses.txt", sep = '\t', index = False)
+    tmp_df.to_csv(output_path + "/" + output_name, sep = '\t', index = False)
 
 
 # In[ ]:
@@ -88,6 +88,7 @@ def get_args():
     parser.add_argument("--annotation_file", help = "Path for all the last files", required=True)
     parser.add_argument("--identity", help = "Threshold for read percent homology", default=90, type = float)
     parser.add_argument("--length", help = "Threshold for alignment length", default=100, type = float)
+    parser.add_argument("--output_name", help="Name of output file", default = 'summary_blast_viruses.tsv')
 
     return parser.parse_args() 
 
@@ -102,6 +103,7 @@ def main():
     blast_file = args.blast_file
     taxa_file = args.taxa_file
     output_path = args.output_path
+    output_name = args.output_name
     identity = args.identity
     length = args.length
     
@@ -119,7 +121,7 @@ def main():
 
     summary_df = virus_taxonomy(new_df, dict_taxonomy)
 
-    saving_files(output_path,summary_df)
+    saving_files(output_path,output_name,summary_df)
 
 if __name__ == "__main__":
     main()
