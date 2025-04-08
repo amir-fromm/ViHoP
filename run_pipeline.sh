@@ -555,7 +555,7 @@ if [ "$RUN_VIRAL_SUMMARY" == "true" ]
 then
     sleep 1
     echo "Running viral summary"
-    bin/blast_viruses_summary.py --output_path $OUTPUT_PATH --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file $ANNOTATION_FILE --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+    bin/blast_viruses_summary.py --output_path $WD --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file summarized_annotation.$TAXONOMIC_LEVEL.csv --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
     echo "Done viral summary"
 fi
 
