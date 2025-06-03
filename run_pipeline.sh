@@ -436,7 +436,7 @@ then
     elif ((SZ >= 100000000 && SZ <= 1000000000))
     then
         echo "file is between 100MB and 1GB"
-        MEM_SUMMARY=1000
+        MEM_SUMMARY=2000
         CORES_SUMMARY=12
 
     elif ((SZ >= 1000000000 && SZ <= 10000000000))
