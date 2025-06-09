@@ -131,7 +131,7 @@ then
             SAMPLE=${DIR%%/outs/*}
             echo "$SAMPLE";
             # Submit the job and extract the job ID
-            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
             job_ids+=($job_id)  # Store the job ID
         fi
     done
@@ -158,7 +158,7 @@ then
                 SAMPLE=${DIR%%/outs/*}
                 echo "$SAMPLE";
                 # Submit the job and extract the job ID
-                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
+                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
                 job_ids+=($job_id)  # Store the job ID
             fi
         done
@@ -174,7 +174,23 @@ then
     done
     echo "Done editing mtx files"
     sleep 1
-    bin/combine_pickle.py --data_dir "$WD/" --list_folders $DIRS_LIST --output_folder Combined_RAW --raw
+
+
+    ##
+    echo "Combine pickle files"
+    job_id=()
+    job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/combine_pickle -o $WD/log/combine_pickle.%J.o -e $WD/log/combine_pickle.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" bin/combine_pickle.py --data_dir "$WD/" --list_folders $DIRS_LIST --output_folder Combined_RAW --raw | awk '{print $2}' | tr -d '<>')
+    job_ids+=($job_id)  # Store the job ID
+
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+    job_ids=()
+    ##
 fi
 
 if [ "$RUN_READ_MTX" == "false" ]
@@ -188,7 +204,20 @@ if [ "$RUN_FIND_INFECTED" == "true" ]
 then
     echo "Finding infected cells"
     sleep 1
-    bin/choose_cells.py --data_dir Combined_RAW/ --sample_table $SAMPLE_TABLE --output_folder Combined_RAW/ --sum $SUM_UMI --count $GENE_COUNT --exp $MAX_UMI 
+
+    job_id=()
+    job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/choose_cells -o $WD/log/choose_cells.%J.o -e $WD/log/choose_cells.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" bin/choose_cells.py --data_dir Combined_RAW/ --sample_table $SAMPLE_TABLE --output_folder Combined_RAW/ --sum $SUM_UMI --count $GENE_COUNT --exp $MAX_UMI | awk '{print $2}' | tr -d '<>')
+    job_ids+=($job_id)  # Store the job ID
+
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+    job_ids=()
+
 
     echo "Done searching for infected cells"
 fi
@@ -262,23 +291,35 @@ then
     sleep 1
     module purge
     # Combine reads to both lanes
-    cd assemble_first_cells/all_cells/
-    for some_path in */
+
+    find $WD/assemble_first_cells/all_cells/ -maxdepth 1 -type d ! -name "." | sort > $WD/tmp/folder_list.txt
+    mkdir -p $WD/tmp_batches
+    split -d -l 2000 $WD/tmp/folder_list.txt $WD/tmp_batches/folder_batch_
+    mkdir -p log_read_editing
+    job_ids=()
+    for batch_file in $WD/tmp_batches/folder_batch_*
     do
-        CELL=$(basename $some_path)
-    #    do
-            #SUBSTRING="${file##*/}"
-           # ID="$(awk -F '_L' '{print $1}' <<< "$SUBSTRING" )"
-        cat $some_path/*.filtered_trimmed_trimmed.fq.gz > $some_path/$CELL.combined.fq.gz
-       # done
+        count=$(wc -l < "$batch_file")
+        batch_name=$(basename "$batch_file")
+
+        job_id=$(bsub -q $QUEUE_SHORT -J "combine_fastq_${batch_name}[1-$count]" -o "$WD/log_read_editing/log_combine.${batch_name}.%I.o" -e "$WD/log_read_editing/log_combine.${batch_name}.%I.e" -R "rusage[mem=200]" bin/combine_fastqs.sh "$batch_file" | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)
     done
+    # Wait for each job
+    for id in "${job_ids[@]}"; do
+        while bjobs -noheader "$id" 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'
+        do
+            sleep 10
+        done
+    done
+    rm -r $WD/tmp_batches
+    rm -r $WD/tmp/folder_list.txt
     if [ "$DELETE_TMP" == "true" ]
     then
         echo "Deleting temporary sequencing files"
         $WD/delete_files.sh $WD/assemble_first_cells/all_cells/
     fi
     echo "Done editing reads"
-
 fi
 
 
@@ -447,8 +488,8 @@ then
 
     else
         echo "file is larger than 10GB"
-        MEM_SUMMARY=25000
-        CORES_SUMMARY=24
+        MEM_SUMMARY=10000
+        CORES_SUMMARY=48
     fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
@@ -494,10 +535,10 @@ then
     eval "$BLAST"
 
     if ! ls "$BLAST_DB_VIRUS.nhr" 1> /dev/null 2>&1 ; then # check if s specific database file exists
-        DIR="$(dirname "${BLAST_DB_VIRUS_FASTA}")"
+        DIR="$(dirname "${BLAST_DB_VIRUS}")"
         FILE="$(basename "${BLAST_DB_VIRUS}")"
         echo "Creating blast database for $FILE in directory $DIR"
-        makeblastdb -in $BLAST_DB_VIRUS_FASTA -blastdb_version 5 -title "$FILE" -dbtype nucl -out $DIR/$FILE
+        makeblastdb -in $BLAST_DB_VIRUS_FASTA -blastdb_version 5 -title "$FILE" -dbtype nucl -out $BLAST_DB_VIRUS
     fi
     mkdir -p blast_results
     ITER=1

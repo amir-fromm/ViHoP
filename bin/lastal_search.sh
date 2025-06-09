@@ -13,28 +13,32 @@ job_ids=()
 # Define the output file inside the job
 out_file="$WD/mapped_cells_virus/last_viruses.last"
 
-# Submit the job and capture job ID
-job_id=$(bsub -q short \
-  -J lastal_virus \
-  -o "$WD/log/lastal_virus.%J.o" \
-  -e "$WD/log/lastal_virus.%J.e" \
-  -n $CORES_BLAST \
-  -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
-  "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -Q 0 -F 15 $LAST_DB $WD/assemble_first_cells/all_cells.transcripts.final.fasta > $out_file" \
-  | awk '{print $2}' | tr -d '<>')
+if [ ! -f "$out_file" ]
+then
+    echo "Running virus lastal"
+    sleep 1
+    # Submit the job and capture job ID
+    job_id=$(bsub -q short \
+    -J lastal_virus \
+    -o "$WD/log/lastal_virus.%J.o" \
+    -e "$WD/log/lastal_virus.%J.e" \
+    -n $CORES_BLAST \
+    -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
+    "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -v -Q 0 -F 15 $LAST_DB $WD/assemble_first_cells/all_cells.transcripts.final.fasta > $out_file" \
+    | awk '{print $2}' | tr -d '<>')
 
-job_ids+=("$job_id")  # Store the job ID
+    job_ids+=("$job_id")  # Store the job ID
 
-# Wait for all jobs to finish
-for id in "${job_ids[@]}"
-do
-    while bjobs -noheader "$id" 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-        sleep 10
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader "$id" 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10
+        done
     done
-done
-
+fi
 # extract only matching contigs to verify them agaisnt the general database
-
+echo "Extract matching contigs to verify them agaisnt the general database"
 awk '!/^#/ {print $1}' $WD/mapped_cells_virus/last_viruses.last | sort -u > $WD/mapped_cells_virus/last_viruses_candidates.txt
 
 seqtk subseq $WD/assemble_first_cells/all_cells.transcripts.final.fasta $WD/mapped_cells_virus/last_viruses_candidates.txt > $WD/mapped_cells_virus/last_viruses_candidates.fasta
@@ -43,32 +47,36 @@ seqtk subseq $WD/assemble_first_cells/all_cells.transcripts.final.fasta $WD/mapp
 job_ids=()
 
 out_file="$WD/mapped_cells_virus/last_candidates_all.last"
+if [ ! -f "$out_file" ]
+then
+    echo "Running general lastal"
+    sleep 1
+    job_id=$(bsub -q short \
+    -J $WD/log/lastal_refseq. \
+    -o $WD/log/lastal_refseq.%J.o \
+    -e $WD/log/lastal_refseq.%J.e  \
+    -n $CORES_BLAST \
+    -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
+    "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -v -Q 0 -F 15 /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin $WD/mapped_cells_virus/last_viruses_candidates.fasta > $out_file" \
+    | awk '{print $2}' | tr -d '<>')
+    job_ids+=($job_id)  # Store the job ID
 
-job_id=$(bsub -q short \
- -J $WD/log/lastal_refseq. \
- -o $WD/log/lastal_refseq.%J.o \
- -e $WD/log/lastal_refseq.%J.e  \
- -n $CORES_BLAST \
- -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
- "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -Q 0 -F 15 /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin $WD/mapped_cells_virus/last_viruses_candidates.fasta > $out_file" \
-  | awk '{print $2}' | tr -d '<>')
-job_ids+=($job_id)  # Store the job ID
-
-# Wait for all jobs to finish
-for id in "${job_ids[@]}"
-do
-    while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-        sleep 10  # Wait for 10 seconds before checking again
-    done # Done checking status of jobs 
-done # The jobs are done
-
+    # Wait for all jobs to finish
+    for id in "${job_ids[@]}"
+    do
+        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
+            sleep 10  # Wait for 10 seconds before checking again
+        done # Done checking status of jobs 
+    done # The jobs are done
+fi
 ##
 
 # Merge results of lastal mepping
+echo "Merge results of lastal mepping"
 (cat $WD/mapped_cells_virus/last_candidates_all.last $WD/mapped_cells_virus/last_viruses.last | grep -v '^#') > $WD/mapped_cells_virus/last_combined.last
 
 # Summarize results (check if best match is to viruses)
 LEN=$(cat $WD/mapped_cells_virus/last_combined.last | wc -l)
 $WD/bin/summarize_lastal_one_large.py --chunks 100000 --size_table $LEN --output_path $WD/mapped_cells_virus/edited_last_combined.tsv --last_path $WD/mapped_cells_virus/last_combined.last
-
+echo "Print summarized table"
 awk -F'\t' '!/^#/ && $14 == "Viruses" {OFS="\t"; print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12}'  $WD/mapped_cells_virus/edited_last_combined.tsv >  $WD/mapped_cells_virus/summary_last_combined.tsv
