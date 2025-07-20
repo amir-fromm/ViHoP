@@ -13,12 +13,20 @@ def load_last(last_path):
     flist = glob.glob(last_path + "*.last")
 
     df_list = []
-    with ProcessPoolExecutor() as executor:
-        results = list(tqdm(executor.map(process_file, flist, [last_path] * len(flist)), total=len(flist)))
+  #  with ProcessPoolExecutor() as executor:
+  #      results = list(tqdm(executor.map(process_file, flist, [last_path] * len(flist)), total=len(flist)))
 
+    results = []
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for result in tqdm(executor.map(process_file, flist, [last_path] * len(flist)), total=len(flist)):
+            if result is not None:
+                results.append(result)
+
+    print("Finished processing individual tables")
     df_list = [df for df in results if df is not None]
 
     if df_list:
+        print('Concatanating dataframes' )
         all_df = pd.concat(df_list, axis=0, ignore_index=True)
         print("Finished processing LAST tables")
         return all_df
@@ -48,16 +56,14 @@ def replacement_process(df_top, replacement_df):
     return super_dict
 
 def dedup_df(df):
-    filtered_df_copy = df.copy()
-    filtered_df_copy[["subject_id", "rrna_type", "rrna_loc", "clone", "Domain","Clade", "Supergroup", "Division", "Class", "Order", "Family", "Genus", "Species"]] = filtered_df_copy['subject id'].str.split("|", expand=True)
-    filtered_df_copy = filtered_df_copy[(filtered_df_copy['rrna_type'] == "18S_rRNA")]
+    df[["subject_id", "rrna_type", "rrna_loc", "clone", "Domain","Clade", "Supergroup", "Division", "Class", "Order", "Family", "Genus", "Species"]] = df['subject id'].str.split("|", expand=True)
+    df = df[df['rrna_type'] == "18S_rRNA"].copy()
     
     
     # Get only the best hit for each read
-    filtered_df_copy['rank'] = filtered_df_copy.groupby(['query id'])['bit score'].rank("min", ascending=False)
-    filtered_df_copy = filtered_df_copy[filtered_df_copy['rank'] == 1]
-    
-    return filtered_df_copy
+    df['rank'] = df.groupby(['query id'])['bit score'].rank("min", ascending=False)
+    df = df[df['rank'] == 1]
+    return df
 
 def filter_df(df):
     global identity, length
@@ -106,14 +112,14 @@ def get_args():
     parser.add_argument("--length", default=85, type=float, help="Threshold for read alignment length")
     parser.add_argument("--count", default=10, type=float, help="Threshold for number of reads to consider")
     parser.add_argument("--level", default='Annotation', help="Taxonomic level for data subset")
-
+    parser.add_argument("--workers", default=4, type=int, help="Max number of parallel processes")
     return parser.parse_args()
 
 def main():
     args = get_args()
     
-    global identity, length, count, level
-    identity, length, count, level = args.identity, args.length, args.count, args.level
+    global identity, length, count, level, max_workers
+    identity, length, count, level, max_workers = args.identity, args.length, args.count, args.level, args.workers
     
     last_path = args.last_path
     last_summary = args.last_summary

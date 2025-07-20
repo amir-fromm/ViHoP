@@ -111,7 +111,7 @@ def annotation_data(pr2_data,metapr2_data):
     
 
     data_annotations['percent'] = data_annotations['length'] / data_annotations.groupby('cell')['length'].transform('sum')
-    data_annotations = data_annotations.groupby(['cell',level,]).agg({'percent':'sum','length':'sum'}).reset_index()
+    data_annotations = data_annotations.groupby(['cell',level]).agg({'percent':'sum','length':'sum'}).reset_index()
     return data_annotations
 
 

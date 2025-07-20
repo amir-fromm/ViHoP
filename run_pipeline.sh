@@ -472,34 +472,38 @@ then
     if ((SZ < 100000000))
     then
         echo "file is smaller than 100MB"
-        MEM_SUMMARY=1000
+        MEM_SUMMARY_BLAST=1000
+        MEM_SUMMARY_LAST=4000
         CORES_SUMMARY=5
     elif ((SZ >= 100000000 && SZ <= 1000000000))
     then
         echo "file is between 100MB and 1GB"
-        MEM_SUMMARY=2000
-        CORES_SUMMARY=12
+        MEM_SUMMARY_BLAST=2000
+        MEM_SUMMARY_LAST=8000
+        CORES_SUMMARY=5
 
     elif ((SZ >= 1000000000 && SZ <= 10000000000))
     then
         echo "file is between 1GB and 10GB"
-        MEM_SUMMARY=10000
-        CORES_SUMMARY=20
+        MEM_SUMMARY_BLAST=4000
+        MEM_SUMARY_LAST=16000
+        CORES_SUMMARY=5
 
     else
         echo "file is larger than 10GB"
-        MEM_SUMMARY=10000
-        CORES_SUMMARY=48
+        MEM_SUMMARY_BLAST=5000
+        MEM_SUMARY_LAST=13000
+        CORES_SUMMARY=12
     fi
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/blast_sum.py --path $WD --metapr2_file /blast_results/all_cells.rRNA.metaPR2.tsv --pr2_file /blast_results/all_cells.rRNA.PR2.tsv --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
+        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY_BLAST] span[ptile=$CORES_SUMMARY]" bin/blast_sum_parquet.py --path $WD --metapr2_file /blast_results/filtered.rRNA.metaPR2.parquet --pr2_file /blast_results/filtered.rRNA.PR2.parquet --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id1)  # Store the job ID
     fi
     if [ "$SUMMARIZE_LAST" == "true" ]
     then
-        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s_multi.py --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
+        job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/last_summary. -o $WD/log/last_summary.%J.o -e $WD/log/last_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMARY_LAST] span[ptile=$CORES_SUMMARY]" bin/last_sum_18s_multi.py --last_path "mapped_cells_18s/" --last_summary $LAST_SUMMARY --replacement_file $REPLACEMENT_FILE --identity $LAST_IDENTITY --length $LAST_LENGTH --level $TAXONOMIC_LEVEL --workers $CORES_SUMMARY | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id2)  # Store the job ID
     fi
     # Wait for all jobs to finish

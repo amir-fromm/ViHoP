@@ -57,7 +57,7 @@ then
     -e $WD/log/lastal_refseq.%J.e  \
     -n $CORES_BLAST \
     -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
-    "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -v -Q 0 -F 15 /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin $WD/mapped_cells_virus/last_viruses_candidates.fasta > $out_file" \
+    "lastal -m 100 -f BlastTab -P 0 -i32G -u 2 -v -Q 0 -F 15 /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin $WD/mapped_cells_virus/last_viruses_candidates.fasta > $out_file" \
     | awk '{print $2}' | tr -d '<>')
     job_ids+=($job_id)  # Store the job ID
 
@@ -72,11 +72,23 @@ fi
 ##
 
 # Merge results of lastal mepping
-echo "Merge results of lastal mepping"
+#echo "Merge results of lastal mepping"
+#(cat $WD/mapped_cells_virus/last_candidates_all.last $WD/mapped_cells_virus/last_viruses.last | grep -v '^#') > $WD/mapped_cells_virus/last_combined.last
+
+# Summarize results (check if best match is to viruses)
+LEN=$(cat $WD/mapped_cells_virus/last_candidates_all.last | wc -l)
+$WD/bin/summarize_lastal_one_large.py --chunks 100000 --size_table $LEN --output_path $WD/mapped_cells_virus/edited_last_all.tsv --last_path $WD/mapped_cells_virus/last_candidates_all.last
+echo "Print summarized table"
+awk -F'\t' '
+  !/^#/ && ($14 == "Bacteria" || $14 == "Eukaryotes" || $14 == "Others" || $14 == "Phages") {
+    if (!seen[$1]++) print $1
+  }
+' $WD/mapped_cells_virus/edited_last_all.tsv > $WD/mapped_cells_virus/false_positives.list
+#awk -F'\t' '!/^#/ && $14 == "Viruses" {OFS="\t"; print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12}'  $WD/mapped_cells_virus/edited_last_combined.tsv >  $WD/mapped_cells_virus/summary_last_combined.tsv
 (cat $WD/mapped_cells_virus/last_candidates_all.last $WD/mapped_cells_virus/last_viruses.last | grep -v '^#') > $WD/mapped_cells_virus/last_combined.last
 
 # Summarize results (check if best match is to viruses)
 LEN=$(cat $WD/mapped_cells_virus/last_combined.last | wc -l)
-$WD/bin/summarize_lastal_one_large.py --chunks 100000 --size_table $LEN --output_path $WD/mapped_cells_virus/edited_last_combined.tsv --last_path $WD/mapped_cells_virus/last_combined.last
-echo "Print summarized table"
+$WD/bin/summarize_lastal_one_large.py --chunks 100000 --size_table $LEN --false_positives $WD/mapped_cells_virus/false_positives.list --output_path $WD/mapped_cells_virus/edited_last_combined.tsv --last_path $WD/mapped_cells_virus/last_combined.last
+
 awk -F'\t' '!/^#/ && $14 == "Viruses" {OFS="\t"; print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12}'  $WD/mapped_cells_virus/edited_last_combined.tsv >  $WD/mapped_cells_virus/summary_last_combined.tsv

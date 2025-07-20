@@ -174,7 +174,10 @@ def main():
                             chunks, 
                             size_table)
     
-        
+    if args.false_positives != -1:
+        with open(args.false_positives, "r") as f:
+            lines = f.read().splitlines()
+        last_df = last_df[~last_df['query id'].isin(lines)]
     output = write_hits(last_df)
     dict_proteins = hit_table(output)
     #list_taxids = set(tmp_df[0])
@@ -210,6 +213,7 @@ def get_args():
     parser.add_argument("--chunks", help = "Size of chunks to take from table. default = 10000", default=10000, type = float)
     parser.add_argument("--size_table", help = "The total number of rows in the last table", required=True, type = float)
     parser.add_argument("--output_path", help="Absolute path of llastalst results", default = 'summary_last.tsv')
+    parser.add_argument("--false_positives", help="A list of false positive results", default = -1)
 
     return parser.parse_args() 
 
