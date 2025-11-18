@@ -534,8 +534,8 @@ then
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.parquet
-        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.parquet
+        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.tsv
+        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.tsv
 
         job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY_BLAST] span[ptile=$CORES_SUMMARY]" bin/blast_sum_parquet.py --path $WD --metapr2_file /blast_results/filtered.rRNA.metaPR2.parquet --pr2_file /blast_results/filtered.rRNA.PR2.parquet --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id1)  # Store the job ID
