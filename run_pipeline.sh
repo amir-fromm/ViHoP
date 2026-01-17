@@ -24,10 +24,12 @@ then
     eval "$CD_HIT"
     eval "$CELL_RANGER"
     rm -r $REF_NAME
+    rm -r mkref_$REF_NAME
     DB_VIRUS_OUTPUT=$(basename "$DB_VIRUS" .fasta)
-    
     if ! ls "$DB_VIRUS_OUTPUT.$DEDUP.fasta" 1> /dev/null 2>&1
     then
+        echo "running CD-HIT"
+        sleep 2
         job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/CD-HIT. -o $WD/log/CD-HIT.%J.o -e $WD/log/CD-HIT.%J.e  -n $CDHIT_CORES -R "rusage[mem=$CDHIT_MEM] span[ptile=$CDHIT_CORES]"  cd-hit-est -c 0.$DEDUP -T 0 -M 0 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.$DEDUP.fasta | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
     
@@ -40,16 +42,16 @@ then
         done # The jobs are done
     fi
 
-    tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
+   # tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
 
-    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+   # awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
-    sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+ #  sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
 
-    bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+ #   bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
-    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+#    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
 
 
     bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.$DEDUP.final.fasta 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
@@ -83,7 +85,7 @@ then
                 
                 rm -r $ID
                 # Submit the job and extract the job ID
-                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+                job_id=$(bsub -q $QUEUE_LONG -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
                 job_ids+=($job_id)  # Store the job ID
             done
         else
@@ -95,7 +97,7 @@ then
                 
                 rm -r $ID
                 # Submit the job and extract the job ID
-                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
+                job_id=$(bsub -q $QUEUE_LONG -J $WD/log/cellranger_$ID. -o $WD/log/cellranger_$ID.%J.o -e $WD/log/cellranger_$ID.%J.e  -n $COUNT_CORES -R "rusage[mem=$COUNT_MEM] span[ptile=$COUNT_CORES]" cellranger count --id=$ID --transcriptome=$REF_PATH/$REF_NAME --fastqs=$dir/ --project=$ID --create-bam=$CREATE_BAM --expect-cells=$EXPECT_CELLS --chemistry=$CHEMISTRY  --nosecondary | awk '{print $2}' | tr -d '<>')
                 job_ids+=($job_id)  # Store the job ID
             done
         fi
