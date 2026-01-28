@@ -6,8 +6,6 @@ mkdir -p $WD/mapped_cells_virus
 
 module load seqtk
 
-LAST_DB=$1
-
 job_ids=()
 
 # Define the output file inside the job
@@ -22,8 +20,8 @@ then
     -J lastal_virus \
     -o "$WD/log/lastal_virus.%J.o" \
     -e "$WD/log/lastal_virus.%J.e" \
-    -n $CORES_BLAST \
-    -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
+    -n $CORES_SEARCH \
+    -R "rusage[mem=$MEMORY_SEARCH] span[ptile=$CORES_SEARCH]" \
     "lastal -m 100 -f BlastTab -P 0 -i14G -u 2 -v -Q 0 -F 15 $LAST_DB $WD/assemble_first_cells/all_cells.transcripts.final.fasta > $out_file" \
     | awk '{print $2}' | tr -d '<>')
 
@@ -55,8 +53,8 @@ then
     -J $WD/log/lastal_refseq. \
     -o $WD/log/lastal_refseq.%J.o \
     -e $WD/log/lastal_refseq.%J.e  \
-    -n $CORES_BLAST \
-    -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" \
+    -n $CORES_SEARCH \
+    -R "rusage[mem=$MEMORY_SEARCH] span[ptile=$CORES_SEARCH]" \
     "lastal -m 100 -f BlastTab -P 0 -i32G -u 2 -v -Q 0 -F 15 /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin $WD/mapped_cells_virus/last_viruses_candidates.fasta > $out_file" \
     | awk '{print $2}' | tr -d '<>')
     job_ids+=($job_id)  # Store the job ID
@@ -91,4 +89,7 @@ awk -F'\t' '
 LEN=$(cat $WD/mapped_cells_virus/last_combined.last | wc -l)
 $WD/bin/summarize_lastal_one_large.py --chunks 100000 --size_table $LEN --false_positives $WD/mapped_cells_virus/false_positives.list --output_path $WD/mapped_cells_virus/edited_last_combined.tsv --last_path $WD/mapped_cells_virus/last_combined.last
 
+FINAL_FILE=$WD/mapped_cells_virus/summary_last_combined.tsv
+if [ ! -f "$FINAL_FILE" ]
+    echo "Virus last fail!"
 awk -F'\t' '!/^#/ && $14 == "Viruses" {OFS="\t"; print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12}'  $WD/mapped_cells_virus/edited_last_combined.tsv >  $WD/mapped_cells_virus/summary_last_combined.tsv

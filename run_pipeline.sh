@@ -42,16 +42,16 @@ then
         done # The jobs are done
     fi
 
-   # tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
+    tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
 
-   # awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
- #  sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+   sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
 
- #   bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+    bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
 
-#    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
 
 
     bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.$DEDUP.final.fasta 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
@@ -404,12 +404,13 @@ then
     sleep 1
     rm $WD/log/blastn_*pr2*
     eval "$BLAST"
-    if [ "$RUN_SORTMERNA" == "true" ]
+    if [ "$SORT_RNA" == "true" ]
     then
-        mkdir -p assemble_first_cells/sortmerna
-        rm -r $WD/kvdb
-        sortmerna --ref  $PR2_FASTA --kvdb $WD/kvdb --threads $THREADS_SORTMERNA --reads assemble_first_cells/all_cells.transcripts.final.fasta --aligned assemble_first_cells/sortmerna/all_cells.rRNA -fastx assemble_first_cells/sortmerna/all_cells.rRNA
+        mkdir -p assemble_first_cells/rrna
+        barrnap --kingdom euk --threads $THREADS_SORTRNA -o assemble_first_cells/rrna/rrna.fa <  assemble_first_cells/all_cells.transcripts.final.fasta > assemble_first_cells/rrna/rrna.gff
+        grep -A1 "18S" assemble_first_cells/rrna/rrna.fa > assemble_first_cells/rrna/18S.rrna.fasta
     fi
+
 
     TOTAL_MEM=$(( CORES_BLAST*MEM_BLAST ))
     if [ "$TOTAL_MEM" -lt 2000 ]
@@ -422,8 +423,8 @@ then
     THREADS=$(( CORES_BLAST*2 ))
     echo "Starting blast search"
     job_ids=()
-    job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_pr2   -o $WD/log/blastn_pr2.%J.o -e $WD/log/blastn_pr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $PR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.PR2.tsv | awk '{print $2}' | tr -d '<>')
-    job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_metapr2 -o $WD/log/blastn_metapr2.%J.o -e $WD/log/blastn_metapr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/sortmerna/all_cells.rRNA.fa -db  $METAPR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.metaPR2.tsv | awk '{print $2}' | tr -d '<>')
+    job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_pr2   -o $WD/log/blastn_pr2.%J.o -e $WD/log/blastn_pr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/rrna/18S.rrna.fasta -db  $PR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.PR2.tsv | awk '{print $2}' | tr -d '<>')
+    job_id2=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_metapr2 -o $WD/log/blastn_metapr2.%J.o -e $WD/log/blastn_metapr2.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -query assemble_first_cells/rrna/18S.rrna.fasta -db  $METAPR2_DB -num_threads $THREADS -out blast_results/all_cells.rRNA.metaPR2.tsv | awk '{print $2}' | tr -d '<>')
 
     job_ids+=($job_id1)  # Store the job ID
     job_ids+=($job_id2)  # Store the job ID
@@ -462,9 +463,6 @@ then
         grep -l "reaching LSF memory usage limit" $WD/log/blastn_limit_use*.$ITER.*.o > $WD/tmp/blastn_limit_use.txt
     done
     
-    awk '$4 >= 100 && $3 >= 99' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
-
-    awk '$4 >= 100 && $3 >= 99' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
     echo "Done blast"
 fi
 
@@ -525,7 +523,7 @@ then
         echo "file is between 1GB and 10GB"
         MEM_SUMMARY_BLAST=4000
         MEM_SUMMARY_LAST=16000
-        CORES_SUMMARY=5
+        CORES_SUMMARY=24
 
     else
         echo "file is larger than 10GB"
@@ -536,10 +534,14 @@ then
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.tsv
-        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.tsv
+       # awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
 
-        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY_BLAST] span[ptile=$CORES_SUMMARY]" bin/blast_sum_parquet.py --path $WD --metapr2_file /blast_results/filtered.rRNA.metaPR2.parquet --pr2_file /blast_results/filtered.rRNA.PR2.parquet --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
+      #  awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
+
+      #  $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.tsv
+      #  $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.tsv
+
+        job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY_BLAST] span[ptile=$CORES_SUMMARY]" bin/blast_sum_parquet_new.py --path $WD --metapr2_file /blast_results/filtered.rRNA.metaPR2.parquet --pr2_file /blast_results/filtered.rRNA.PR2.parquet --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id1)  # Store the job ID
     fi
     if [ "$SUMMARIZE_LAST" == "true" ]
@@ -571,26 +573,23 @@ then
     sleep 1
 fi
 
-if [ "$RUN_VIRAL_BLAST" == "true" ]
+if [ "$RUN_VIRAL_LAST" == "true" ]
 then
     cd $WD
     echo "Running viral blast"
     rm $WD/log/blastn_virus*
     sleep 1
-    eval "$BLAST"
 
-    if ! ls "$BLAST_DB_VIRUS.nhr" 1> /dev/null 2>&1 ; then # check if s specific database file exists
-        DIR="$(dirname "${BLAST_DB_VIRUS}")"
-        FILE="$(basename "${BLAST_DB_VIRUS}")"
-        echo "Creating blast database for $FILE in directory $DIR"
-        makeblastdb -in $BLAST_DB_VIRUS_FASTA -blastdb_version 5 -title "$FILE" -dbtype nucl -out $BLAST_DB_VIRUS
+    if ! ls "$LAST_DB_VIRUS.prj" 1> /dev/null 2>&1 ; then # check if s specific database file exists
+
+        DIR="$(dirname "${LAST_DB_VIRUS}")"
+        FILE="$(basename "${LAST_DB_VIRUS}")"
+        echo "Creating last database for $FILE in directory $DIR"
+        lastdb -c -p -P 12 $LAST_DB_VIRUS $LAST_DB_VIRUS_FASTA
     fi
-    mkdir -p blast_results
-    ITER=1
-    THREADS=$(( CORES_BLAST*2 ))
     
     job_ids=()
-    job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -word_size 11 -evalue $EVALUE -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
+    job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/last_virus.   -o $WD/log/last_virus.%J.o -e $WD/log/last_virus.%J.e -n 1 -R "rusage[mem=1024] span[ptile=1]" sh bin/lastal_search_viruses.sh | awk '{print $2}' | tr -d '<>')
 
     job_ids+=($job_id)  # Store the job ID
 
@@ -600,37 +599,13 @@ then
             sleep 10  # Wait for 10 seconds before checking again
         done # Done checking status of jobs 
     done # The jobs are done
-    
-    # Check if all some jobs did not have enough memory. If so, increase memory in a loop until all jobs had enough memory.
-    
-    grep -l "reaching LSF memory usage limit" $WD/log/blastn_virus* > $WD/tmp/blastn_limit_use.txt
-
-    while [ -s "$WD/tmp/blastn_limit_use.txt" ] && [ "$ITER" -lt 6 ]
-    do
-        ((ITER++))
-        MEM_BLAST=$(( MEM_BLAST*ITER ))
-        echo "Some jobs failed due to memory. Starting iteration $ITER"
-        job_ids=()
-            
-        job_id=$( bsub -q $QUEUE_SHORT -J $WD/log/blastn_virus.   -o $WD/log/blastn_virus.%J.o -e $WD/log/blastn_virus.%J.e -n $CORES_BLAST -R "rusage[mem=$MEM_BLAST] span[ptile=$CORES_BLAST]" blastn -outfmt 6 -evalue $EVALUE -word_size 11 -query assemble_first_cells/all_cells.transcripts.final.fasta -db  $BLAST_DB_VIRUS -num_threads $THREADS -out blast_results/all_cells.virus.tsv | awk '{print $2}' | tr -d '<>')
-        job_ids+=($job_id)  # Store the job ID
-
-        # Wait for all jobs to finish
-        for id in "${job_ids[@]}"
-        do
-            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-                sleep 10  # Wait for 10 seconds before checking again
-            done # Done checking status of jobs 
-        done # The jobs are done
-        job_ids=()
-        grep -l "reaching LSF memory usage limit" $WD/log/blastn_limit_use*.$ITER.*.o > $WD/tmp/blastn_limit_use.txt
-    done
-    echo "Done virus blast"
+   
+    echo "Done virus last"
 
 fi
     
 
-if [ "$RUN_VIRAL_BLAST" == "false" ]
+if [ "$RUN_VIRAL_LAST" == "false" ]
 then
     echo "Skipping viral blast"
     sleep 1

@@ -23,7 +23,7 @@ def read_parquet_file(parquet_file):
     pf = ParquetFile(parquet_file)
     df = pf.to_pandas()
     df['sseqid'] = df['sseqid'].astype(str)
-    df['cell'] = df['qseqid'].str.extract(r"i\d+_(.+)$")[0]
+    df['cell'] = df['qseqid'].str.extract(r"i\d+_(.+):.+$")[0]
     return df
 
 def split_sseqid(df,db):
@@ -50,6 +50,7 @@ def replace_worker(args):
 
 
 def compute_super_dict(all_data, replacement_df):
+    print (all_data.columns)
     print("Building replacement dictionary...")
     tasks = [(all_data, row['level'], row['old_name'], row['new_name']) for _, row in replacement_df.iterrows()]
     results = [replace_worker(task) for task in tasks]
