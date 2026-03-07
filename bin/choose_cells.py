@@ -1,83 +1,139 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+# In[46]:
 
-import numpy as np
-import pandas as pd
+
 from argparse import ArgumentParser
 
 
-def get_args():
-    parser = ArgumentParser(description="Choose a subset of cells that pass a criteria")
-    parser.add_argument("--data_dir", help = "Path to directory containing the combined raw data", required=True)
-    parser.add_argument("--sample_table",help = "A tab-delimited table of sample names and its raw fastq file", required = True)
-    parser.add_argument("--output_folder",help = "Name of folder for output file" , required=True)
-    # Threshold values
-    parser.add_argument("--sum",type=int,help = "Threshold value: The sum of UMIs in a cell should be equal or higher than this number, default:1", default = 1)
-    parser.add_argument("--count",type=int,help = "Threshold value: The total number of genes expressed in a cell should be equal or higher than this number, default:1", default = 1)
-    parser.add_argument("--exp",type=int,help = "Threshold value: The most highly expressed gene should have a number of UMIs equal or higher than this number, default:1", default = 1)
+
+# In[47]:
+
+
+import scanpy as sc
+import os
+import pandas as pd
+
+
+# In[48]:
+
+
+def load_cellranger_matrix(path, sample_name=None):
+    """
+    Load a 10x Genomics Cell Ranger matrix into an AnnData object.
+
+    Parameters:
+    - path (str): Path to directory containing 'matrix.mtx.gz', 'features.tsv.gz', and 'barcodes.tsv.gz'
+                  Usually this is the 'filtered_feature_bc_matrix' or 'raw_feature_bc_matrix' directory.
+    - sample_name (str): Optional. If provided, assigns sample name to `.obs['sample']`.
+
+    Returns:
+    - AnnData object with raw counts in .X
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Path does not exist: {path}")
+    print(path)
+    # Load using Scanpy’s built-in reader
+    adata = sc.read_10x_mtx(path, var_names='gene_symbols')
+
+    # Assign sample metadata if provided
+    if sample_name:
+        adata.obs["sample"] = sample_name
+
+    # Store raw counts
+    adata.layers["counts"] = adata.X.copy()
+
+    return adata
+
+
+# In[49]:
+
+
+def concatenate(sample_adata_list,sample_names):
+    adata = sample_adata_list[0].concatenate(
+        sample_adata_list[1:], 
+        batch_key="sample",
+            join="outer",
+        batch_categories=sample_names,
+        index_unique=None  # ← keep original obs_names from each sample
+    )
+    return adata
+
+
+# In[50]:
+
+
+def get_all_cells_from_anndata(adata, formatted = False):
+    # Get all cells from an unforamtted anndata (without formatted cells names) or from a formatted anndata
+    if formatted == True:
+        list_cells = list(adata.obs.index)
+    else:
+        list_cells = list(adata.obs.reset_index()['index'].str.split("-1", expand = True)[0] + "." + adata.obs.reset_index()['sample'])
+    return list_cells
+
+
+# In[51]:
+
+
+def load_data(paths):
   
+
+    adatas = [load_cellranger_matrix(p, sample_name=s) for s, p in paths.items()]
+
+    sample_names = paths.keys()
+
+    adata = concatenate(adatas,sample_names)
+    adata.obs_names = [
+        f"{bc.replace('-1','')}.{samp}" for bc, samp in zip(adata.obs_names, adata.obs["sample"])
+    ]
+    return adata
+
+
+# In[52]:
+
+
+def get_args():
+    parser = ArgumentParser(description="Parallel BLAST summarizer for large files")
+    parser.add_argument("--sample_list", required=True, help="List of samples")
+    parser.add_argument("--path", required=True, help="Path to sample and output")
+    parser.add_argument("--sample_table", required=True, help="A table of samples and corresponding Fastq files")
+    parser.add_argument("--min_gene", required=False, default = 1, help="Minimum cells expressing a gene (Sum of cells expressing genes). default=1")
+    parser.add_argument("--min_umi", required=False, default = 1, help="Minimum expression per cell (sum of UMIs). default=1")
+    parser.add_argument("--output", required=False, default = 'list_cells', help="Output file name. default=list_cells.tsv")
+
     return parser.parse_args()
 
-def load_data(path):
-    
-    data = pd.read_pickle(path+"data_raw.pickle.gz")
-    data = data.apply(pd.to_numeric)
-    #data_magic = pd.read_pickle(path+"/data_magic_nd.gz")
-  #  metadata = pd.read_pickle(path+"metadata.pickle.gz")
-    #wells_cells = pd.read_table(path+"/wells_cells.txt")
-    return data
+
+# In[53]:
 
 
-
-def load_genes(path,file):
-    filename = path+file
-    with open (filename,"r") as f:
-        content_list = f.read().splitlines()
-    return content_list
-    
-
-
-# load data
 def main():
     args = get_args()
-    base_path = args.data_dir
-
-    data = load_data(base_path)
-
-    data_new = data.fillna(0)
-
-    sum, count, exp = args.sum, args.count, args.exp
-    new_df = subset(data_new,sum, count, exp)
+    sample_list = args.sample_list.split(",")
+    path = args.path
+    paths = {sample:os.path.join(path,sample,'outs/filtered_feature_bc_matrix') for sample in sample_list}
+    adata = load_data(paths)
+    min_gene = args.min_gene
+    min_umi = args.min_umi
+    print("Minimum cells expressing gene:",min_gene,"\nMinimum UMI per cell:", min_umi)
+    sc.pp.filter_genes(adata, min_counts=int(args.min_gene))
+    sc.pp.filter_cells(adata, min_counts=int(args.min_umi))
+    print(adata)
+    total_cells = get_all_cells_from_anndata(adata,formatted = True )
     table_samples = pd.read_table(args.sample_table,sep = "\t", header = None,index_col = 0)
     table_samples = table_samples.squeeze()
     dict_samples = table_samples.to_dict()
-    save_cells(new_df,dict_samples,args.output_folder)
-
-def subset(data, sum, count, exp):
-
-    df = pd.DataFrame(index = data.index)
-
-    df['count'] = (data > 0).astype(int).sum(axis=1)
-    df['sum'] = data.sum(axis = 1)
-    df['max'] = data.max(axis = 1)
+    df = pd.DataFrame([v.split('.') for v in total_cells])
+    df.columns = ["cell", "sample"]
+    df['fastq'] = df['sample'].map(dict_samples)
+    output_file = args.output
+    df[['cell','fastq']].to_csv(os.path.join(path, output_file), sep = "\t",index = False,header=None)
 
 
-    df['sample'] = df.index
-
-    df['sample'] = df['sample'].str.split(".", expand = True)[1]
-    df = df.set_index(pd.Series(df.index).str.split("-", expand = True)[0])
-
-
-    df_sum = df[(df['max'] >= exp) & (df['count'] >= count) & (df['sum'] >= sum)]
-    return df_sum
-
-
-def save_cells(df_sum,dict_samples,output_folder):
-    df_cells_coexpressed = (df_sum['sample']).replace(dict_samples)
-    df_cells_coexpressed.to_csv(output_folder+"/infected_cells.tsv", sep = "\t",header=None)
+# In[54]:
 
 
 if __name__ == "__main__":
     main()
-  
+

@@ -25,12 +25,12 @@ then
     eval "$CELL_RANGER"
     rm -r $REF_NAME
     rm -r mkref_$REF_NAME
-    DB_VIRUS_OUTPUT=$(basename "$DB_VIRUS" .fasta)
-    if ! ls "$DB_VIRUS_OUTPUT.$DEDUP.fasta" 1> /dev/null 2>&1
+    DB_OUTPUT=$(basename "$DB" .fasta)
+    if ! ls "$DB_OUTPUT.$DEDUP.fasta" 1> /dev/null 2>&1
     then
         echo "running CD-HIT"
         sleep 2
-        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/CD-HIT. -o $WD/log/CD-HIT.%J.o -e $WD/log/CD-HIT.%J.e  -n $CDHIT_CORES -R "rusage[mem=$CDHIT_MEM] span[ptile=$CDHIT_CORES]"  cd-hit-est -c 0.$DEDUP -T 0 -M 0 -i $DB_VIRUS -o $DB_VIRUS_OUTPUT.$DEDUP.fasta | awk '{print $2}' | tr -d '<>')
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/CD-HIT. -o $WD/log/CD-HIT.%J.o -e $WD/log/CD-HIT.%J.e  -n $CDHIT_CORES -R "rusage[mem=$CDHIT_MEM] span[ptile=$CDHIT_CORES]"  cd-hit-est -c 0.$DEDUP -T 0 -M 0 -i $DB -o $DB_OUTPUT.$DEDUP.fasta | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id)  # Store the job ID
     
         # Wait for all jobs to finish
@@ -42,19 +42,19 @@ then
         done # The jobs are done
     fi
 
-    tr '|=()' '#' < $DB_VIRUS_OUTPUT.$DEDUP.fasta > $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta
+    tr '|=()' '#' < $DB_OUTPUT.$DEDUP.fasta > $DB_OUTPUT.$DEDUP.clean.fasta
 
-    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_VIRUS_OUTPUT.$DEDUP.clean.fasta  >  $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
+    awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' < $DB_OUTPUT.$DEDUP.clean.fasta  >  $DB_OUTPUT.$DEDUP.final.fasta
 
-   sed -i '1{/^[[:space:]]*$/d}' $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
-
-
-    bin/create_gtf.sh $DB_VIRUS_OUTPUT.$DEDUP.final.fasta
-
-    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+   sed -i '1{/^[[:space:]]*$/d}' $DB_OUTPUT.$DEDUP.final.fasta
 
 
-    bin/create_reference_new.sh $REF_NAME $DB_VIRUS_OUTPUT.$DEDUP.final.fasta 04_$DB_VIRUS_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+    bin/create_gtf.sh $DB_OUTPUT.$DEDUP.final.fasta
+
+    sed -i 's/\.\t1\t\./.\t+\t./g' 04_$DB_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
+
+
+    bin/create_reference_new.sh $REF_NAME $DB_OUTPUT.$DEDUP.final.fasta 04_$DB_OUTPUT.$DEDUP.final.fasta.gene_intervals.gtf
     echo "Done database editing"
 fi
 
@@ -154,97 +154,15 @@ fi
 
 # Edit cell ranger files
 
-if [ "$RUN_READ_MTX" == "true" ]
-then
-    echo "Running cell ranger matrix editing"
-    sleep 1
-    rm $WD/tmp/read_mtx.txt
-    rm $WD/log/raw_UMI_counts_10X_data_*
-    job_ids=()
-    ITER=1
-    for DIR in */outs/filtered_feature_bc_matrix
-    do
-        if ! ls "$DIR/data_raw.pickle.gz" 1> /dev/null 2>&1
-        then
-            SAMPLE=${DIR%%/outs/*}
-            echo "$SAMPLE";
-            # Submit the job and extract the job ID
-            job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
-            job_ids+=($job_id)  # Store the job ID
-        fi
-    done
-    # Wait for all jobs to finish
-    for id in "${job_ids[@]}"
-    do
-        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-            sleep 10  # Wait for 10 seconds before checking again
-        done # Done checking status of jobs 
-    done # The jobs are done
-    job_ids=()
-    # combine
-    grep -l "reaching LSF memory usage limit" $WD/log/raw_UMI_counts_10X_data_* > $WD/tmp/read_mtx.txt
-
-    while [ -s "$WD/tmp/read_mtx.txt" ] && [ "$ITER" -lt 4 ]
-    do
-        ((ITER++))
-        echo "Jobs failed do to memory. Starting iteration $ITER"
-        CORES_MTX=$(( ITER*CORES_MTX ))
-        for DIR in */outs/filtered_feature_bc_matrix
-        do
-            if ! ls "$DIR/data_raw.pickle.gz" 1> /dev/null 2>&1
-            then
-                SAMPLE=${DIR%%/outs/*}
-                echo "$SAMPLE";
-                # Submit the job and extract the job ID
-                job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/raw_UMI_counts_10X_data_$SAMPLE -o $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.o -e $WD/log/raw_UMI_counts_10X_data_$SAMPLE.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" python bin/00.00.raw_UMI_counts_10X_data.py --data_dir $DIR --file_type mtx | awk '{print $2}' | tr -d '<>')
-                job_ids+=($job_id)  # Store the job ID
-            fi
-        done
-         # Wait for all jobs to finish
-        for id in "${job_ids[@]}"
-        do
-            while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-                sleep 10  # Wait for 10 seconds before checking again
-            done # Done checking status of jobs 
-        done # The jobs are done
-        job_ids=()
-        grep -l "reaching LSF memory usage limit" $WD/log/raw_UMI_counts_10X_data_* > $WD/tmp/read_mtx.txt
-    done
-    echo "Done editing mtx files"
-    sleep 1
-
-
-    ##
-    echo "Combine pickle files"
-    job_id=()
-    job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/combine_pickle -o $WD/log/combine_pickle.%J.o -e $WD/log/combine_pickle.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" bin/combine_pickle.py --data_dir "$WD/" --list_folders $DIRS_LIST --output_folder Combined_RAW --raw | awk '{print $2}' | tr -d '<>')
-    job_ids+=($job_id)  # Store the job ID
-
-    # Wait for all jobs to finish
-    for id in "${job_ids[@]}"
-    do
-        while bjobs -noheader $id 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'; do
-            sleep 10  # Wait for 10 seconds before checking again
-        done # Done checking status of jobs 
-    done # The jobs are done
-    job_ids=()
-    ##
-fi
-
-if [ "$RUN_READ_MTX" == "false" ]
-then
-    echo "Skipping cell ranger matrix editing"
-    sleep 1
-fi
 
 # Get a list of infected cells
-if [ "$RUN_FIND_INFECTED" == "true" ]
+if [ "$RUN_CHOOSE_CELLS" == "true" ]
 then
-    echo "Finding infected cells"
+    echo "Extracting cell barcode and fastq source"
     sleep 1
 
     job_id=()
-    job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/choose_cells -o $WD/log/choose_cells.%J.o -e $WD/log/choose_cells.%J.e -n $CORES_MTX -R "rusage[mem=$MEM_MTX] span[ptile=$CORES_MTX]" bin/choose_cells.py --data_dir Combined_RAW/ --sample_table $SAMPLE_TABLE --output_folder Combined_RAW/ --sum $SUM_UMI --count $GENE_COUNT --exp $MAX_UMI | awk '{print $2}' | tr -d '<>')
+    job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/choose_cells -o $WD/log/choose_cells.%J.o -e $WD/log/choose_cells.%J.e -n $CORES_CELLS -R "rusage[mem=$MEM_CELLS] span[ptile=$CORES_CELLS]" bin/choose_cells.py --sample_list $SAMPLE_LIST --path $WD --sample_table $SAMPLE_TABLE --min_umi $MIN_UMI --min_gene $MIN_GENE --output $OUTPUT_CELLS | awk '{print $2}' | tr -d '<>')
     job_ids+=($job_id)  # Store the job ID
 
     # Wait for all jobs to finish
@@ -260,9 +178,9 @@ then
     echo "Done searching for infected cells"
 fi
 
-if [ "$RUN_FIND_INFECTED" == "false" ]
+if [ "$RUN_CHOOSE_CELLS" == "false" ]
 then
-    echo "Skipping finding infected cells"
+    echo "Skipping choosing cells"
     sleep 1
 fi
 
@@ -534,12 +452,12 @@ then
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-       # awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
+        awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
 
-      #  awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
+        awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
 
-      #  $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.tsv
-      #  $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.tsv
+        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.metaPR2.tsv
+        $WD/bin/tsv_to_parquet.py --tsv_path $WD/blast_results/filtered.rRNA.PR2.tsv
 
         job_id1=$( bsub -q $QUEUE_SHORT -J $WD/log/blast_summary.   -o $WD/log/blast_summary.%J.o -e $WD/log/blast_summary.%J.e -n $CORES_SUMMARY -R "rusage[mem=$MEM_SUMMARY_BLAST] span[ptile=$CORES_SUMMARY]" bin/blast_sum_parquet_new.py --path $WD --metapr2_file /blast_results/filtered.rRNA.metaPR2.parquet --pr2_file /blast_results/filtered.rRNA.PR2.parquet --replacement_file $REPLACEMENT_FILE --identity $BLAST_IDENTITY --length $BLAST_LENGTH --level $TAXONOMIC_LEVEL | awk '{print $2}' | tr -d '<>')
         job_ids+=($job_id1)  # Store the job ID

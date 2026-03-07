@@ -30,7 +30,7 @@ conda activate host-virus-pairing
 Besides the packages from the requirements file, the pipeline also uses modules that were installed in our LSF platform and are called using the module load command:
 ```
 CD-HIT/4.6.6
-CellRanger/8.0.0
+CellRanger/10.0.0
 TrimGalore/0.6.5
 SPAdes/3.15
 BBMap
@@ -61,6 +61,10 @@ For example:
 Supergroup	Chlorophyta	Green-algae/Plants	#008000
 
 Result: Cells belonging to the supergroup Chlorophyta will be annotated as Green-algae/Plants and marked green.
+
+### Reference gene set
+
+A reference gene set is required to map the scRNA-seq data to.
 
 
 ### Making host reference databases
@@ -99,7 +103,7 @@ In the first run, it is recommended to run the pipeline step by step.
 
 #### Database Editing
 
-Editing the viral gene databse to make it suitable for Cell Ranger count. It takes as an input a fasta file of the virus genes you are interested in finding in your data. It will de-duplicate the database at 99% using CD-HIT and create a Cell Ranger reference.
+Editing the reference gene databse to make it suitable for Cell Ranger count. It takes as an input a fasta file of the virus genes you are interested in finding in your data. It will de-duplicate the database using CD-HIT and create a Cell Ranger reference.
 
 #### Cell ranger count
 
@@ -107,11 +111,12 @@ Using Cell Ranger to find cells expressing viral genes. It takes as an input fas
 
 #### Editing Cell Ranger count matrix 
 
-Editing the Cell Ranger count matrix. Removes empty cells and genes, edits the cell names to include sample names, and saves the output as a pickle file.
+Editing the Cell Ranger count matrix.  and saves the output as a pickle file.
 
-#### Choosing infected cells
+#### Choosing cells
 
-Infected cells from the Cell Ranger matrix are chosen based on three criteria: the total sum of UMIs in a cell, the expression of the most highly expressed gene,  and the total number of genes expressed in a cell. 
+Concatanate cell ranger matrixes from all samples. Edits the cell names to include sample names.
+Cells from the Cell Ranger matrix are chosen based on the total sum of UMIs in a cell. Genes are filtered based on number of cells expressing it.
 The output is a tab-delimited table of cells with the full path to their related fastq files.
 
 #### Read extraction
@@ -133,34 +138,39 @@ The output is one metatranscriptome fasta file of assembled transcripts from all
 #### 18s rRNA Blast
 
 The combined metatranscriptome fasta file is compared to the PR2 18s rRNA database.
-First, rRNA transcripts are sorted out using sortmerna.
+First, rRNA transcripts are sorted out using barrnap.
 The sorted rRNA transcript file is aligned to the PR2 and metaPR2 databases.
-The results are filtered by 99% identity and 100 bp alignment length.
 The outputs are Blast results in the 6 format.
 
 #### 18s rRNA lastal
 
 Trimmed reads from each cell are aligned to the PR2 18s rRNA database using lastal.
 The outputs are tab-delimited lastal results for each cell.
+The last results are filtered by custom identity and bp alignment length.
+
 
 #### Taxonomic annotation summary
 
-The results from both the Blast and lastal search are combined.
-Taxonomic names of specific taxonomic groups are replaced with common names (using the replacement file).
-Only cells that pass the criteria for both Blast and lastal are considered annotated.
-Non-chimeric cells are considered as follows:
-1. In the Blast results, the sum of alignments length to one taxa is at least 90% of the total alignment length for a cell.
-2. In the lastal results, the sum of reads aligned to one taxa is at least 90% of the total aligned reads for a cell, and the number of aligned reads is at least 10.
+The Blast results are pre-filtered by custom identity and bp alignment length.
+The results from both the Blast and lastal search are combined and summarized according to a taxonomic level.
+The best hit for each contig is filtered using a custom threshold and bp alignment length.
+If "Annotation" is chosen as a taxonomic level, taxonomic names of specific taxonomic groups are replaced with common names (using the replacement file).
+Non-chimeric cells (for pairing) are considered as follows:
+1. In the Blast results, no other assembled contig with a different annotation
+2. In the lastal results, the sum of reads aligned to one taxa is at least 80% of the total aligned reads for a cell, and the number of aligned reads is at least 10.
 3. The results of Blast and lastal are similar.
+Only cells that pass the criteria for both Blast and lastal are considered annotated.
 
 The outputs are summaries of lastal and Blast results, a combined summary of both, and a file of only non-chimeric annotated cells.
 
 #### Viral Blast
 
-The combined metatranscriptome fasta file is compared to a virus database using Blast.
+The combined metatranscriptome fasta file is compared to a virus database using lastal.
+The suspected viral contigs are compared to a general reference database (Refseq) using lastal and contigs that matched best to organisms other than viruses are removed ad false positives.
+The cleaned tables are merged with best hits retained.
 The output is Blast results in the 6 format.
 
 #### Host-virus pairing summary
 
-The results from the viral Blast are summarized and are paired with results from the cell annotation.
-The output is a summary of the viral Blast and a file containing the taxonomic assignment of the virus and the hosting cell.
+The results from the viral lastal search are summarized and are paired with results from the cell annotation.
+The output is a summary of the viral lastal search with the taxonomic assignment of the virus and the hosting cell.
