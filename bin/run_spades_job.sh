@@ -25,7 +25,7 @@ if [ ! -f "$BARCODE_FULL/assembly/transcripts.fasta" ]; then
     echo "Detected read sets: ${read_sets[@]}"
 
     # Initialize SPAdes command
-    SPADES_CMD="rnaspades.py -k 21,33,55 -t $THREADS -o $BARCODE_FULL/assembly"
+    SPADES_CMD="rnaspades.py -k auto -t $THREADS -o $BARCODE_FULL/assembly"
 
     # Track argument index
     index=1

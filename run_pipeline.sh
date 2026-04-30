@@ -158,10 +158,10 @@ fi
 # Get a list of infected cells
 if [ "$RUN_CHOOSE_CELLS" == "true" ]
 then
-    echo "Extracting cell barcode and fastq source"
+    echo "Running choosing cells"
     sleep 1
 
-    job_id=()
+    job_ids=()
     job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/choose_cells -o $WD/log/choose_cells.%J.o -e $WD/log/choose_cells.%J.e -n $CORES_CELLS -R "rusage[mem=$MEM_CELLS] span[ptile=$CORES_CELLS]" bin/choose_cells.py --sample_list $SAMPLE_LIST --path $WD --sample_table $SAMPLE_TABLE --min_umi $MIN_UMI --min_gene $MIN_GENE --output $OUTPUT_CELLS | awk '{print $2}' | tr -d '<>')
     job_ids+=($job_id)  # Store the job ID
 
@@ -175,7 +175,7 @@ then
     job_ids=()
 
 
-    echo "Done searching for infected cells"
+    echo "Done choosing cells"
 fi
 
 if [ "$RUN_CHOOSE_CELLS" == "false" ]
@@ -294,7 +294,7 @@ then
     # Edit names of transcripts for each cell
     $WD/bin/array_loop_files.sh $WD/assemble_first_cells/all_cells $WD/bin/editing_contigs_array.sh 100
 
-    cat $WD/assemble_first_cells/all_cells/*/assembly/transcripts.edit.fasta > $WD/assemble_first_cells/all_cells.transcripts.edit.fasta
+    find "$WD/assemble_first_cells/all_cells" -name 'transcripts.edit.fasta' -print0 | xargs -0 cat > "$WD/assemble_first_cells/all_cells.transcripts.edit.fasta"
     cd $WD/assemble_first_cells
     # Remove low-complexity transcripts
     eval "$BBMAP"
@@ -325,7 +325,19 @@ then
     if [ "$SORT_RNA" == "true" ]
     then
         mkdir -p assemble_first_cells/rrna
-        barrnap --kingdom euk --threads $THREADS_SORTRNA -o assemble_first_cells/rrna/rrna.fa <  assemble_first_cells/all_cells.transcripts.final.fasta > assemble_first_cells/rrna/rrna.gff
+        seqkit seq -m $CONTIG_LENGTH assemble_first_cells/all_cells.transcripts.final.fasta -o assemble_first_cells/all_cells.transcripts.filtered.fasta
+        job_ids=()
+        job_id=$(bsub -q $QUEUE_SHORT -J $WD/log/barrnap -o $WD/log/barrnap.%J.o -e $WD/log/barrnap.%J.e -n $THREADS_SORTRNA -R "rusage[mem=$MEM_SORTRNA] span[ptile=$THREADS_SORTRNA]" "barrnap --kingdom euk --threads $THREADS_SORTRNA -o assemble_first_cells/rrna/rrna.fa <  assemble_first_cells/all_cells.transcripts.filtered.fasta > assemble_first_cells/rrna/rrna.gff" | awk '{print $2}' | tr -d '<>')
+        job_ids+=($job_id)  # Store the job ID
+
+        # Wait for each job
+        for id in "${job_ids[@]}"; do
+            while bjobs -noheader "$id" 2>/dev/null | grep -q 'PEND\|RUN\|UNKWN\|SSUSP'
+            do
+                sleep 10
+            done
+        done
+        
         grep -A1 "18S" assemble_first_cells/rrna/rrna.fa > assemble_first_cells/rrna/18S.rrna.fasta
     fi
 
@@ -400,7 +412,7 @@ then
     mkdir -p $WD/log_last
     rm $WD/log_last/*
     eval "$SEQTK"
-    ls assemble_first_cells/all_cells/*/*combined.fq.gz > $WD/tmp/combined_reads.txt
+    find assemble_first_cells/all_cells -type f -name '*combined.fq.gz' > "$WD/tmp/combined_reads.txt"
   #  sh bin/lastal_loop_18s.sh $WD/tmp/combined_reads.txt
     sh bin/lastal_array_18s.sh $WD/tmp/combined_reads.txt
     echo "Done running 18s last search"
@@ -452,7 +464,7 @@ then
     job_ids=()
     if [ "$SUMMARIZE_BLAST" == "true" ]
     then
-        awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
+       awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.PR2.tsv > blast_results/filtered.rRNA.PR2.tsv
 
         awk '$4 >= 100 && $3 >= 90' blast_results/all_cells.rRNA.metaPR2.tsv > blast_results/filtered.rRNA.metaPR2.tsv
 

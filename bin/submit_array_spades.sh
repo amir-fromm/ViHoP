@@ -72,7 +72,7 @@ while [ $ITER -le $MAX_ITER ]; do
     > "$failed_jobs_file"  # Clear the file before use
 
     # **Check logs for memory failures ONLY**
-    grep -l "reaching LSF memory usage limit" "$WD/log_spades/"* > "$WD/tmp/memory_limit_logs.txt" || true
+    find "$WD/log_spades" -type f -name '*' -exec grep -l "reaching LSF memory usage limit" {} + > "$WD/tmp/memory_limit_logs.txt" || true
 
     if [ -s "$WD/tmp/memory_limit_logs.txt" ]; then
         echo "Jobs failed due to memory issues. Collecting affected job indices..."

@@ -9,7 +9,7 @@ echo "Pulling sequence headers by cell barcode"
 # Input arguments
 BARCODE_FILE=$1 # barcodes_and_fastq_paths.txt
 MEMORY=$MEM_EXTRACT  # Initial memory allocation per job
-MAX_JOBS=$(( MAX_MEM /  MEM_EXTRACT ))
+MAX_JOBS=10000
 LOG_DIR="$WD/log_extract"
 
 # Retry logic with a maximum iteration limit
@@ -26,7 +26,12 @@ job_ids=()
 for subset_file in barcode_subset_*; do
     total_barcodes=$(wc -l < "$subset_file")
     echo "Submitting jobs for $subset_file with $total_barcodes tasks"
-
+    number=$(bjobs -w | wc -l) # get the numbers of jobs running
+    while [ "$number" -gt $MAX_JOBS ];do 
+        echo "Current running jobs:$number. Waiting..."
+        sleep 10
+        number=$(bjobs -w | wc -l)
+    done
     job_id=$(bsub -n 1 -R "rusage[mem=$MEMORY]" \
     -J "extract_reads[1-$total_barcodes]" \
     -o "$LOG_DIR/%J_%I.o" -e "$LOG_DIR/%J_%I.e" \
