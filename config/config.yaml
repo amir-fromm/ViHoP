@@ -1,0 +1,25 @@
+input:
+  fastq_dirs:
+    - /home/labs/vardi/Collaboration/fastq/20240711_LH00211_0067_A222VJWLT1_10X_Patagonia_Eilat_Alps/Alps_Amir
+    - /home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps2
+    - /home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps5
+  sample_table: docs/sample_table_fastq.tsv
+
+references:
+  cellranger_transcriptome_fasta: /home/labs/vardi/Collaboration/databases/Gossenkollesee/combined_genemark_metaeuk_genes_dedup.fasta
+  pr2_fasta: /home/labs/vardi/Collaboration/databases/pr2/pr2_version_5.0.0_dedup.fasta
+  pr2_db: /home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+  virus_db_fasta: /home/labs/vardi/Collaboration/databases/GVDB/GVDB_markergenes/GVDB.markergenes_prot.faa
+  virus_taxonomy: /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/0626_GV_Mirus_GKS_taxonomic_classification.csv
+
+taxonomy:
+  replacement_file: docs/replacement_taxa.tsv
+  level: Class
+
+outputs:
+  candidate_cells: results/cells/candidate_cells.tsv
+  cell_annotation_blast: results/cells/blast_summary.Class.csv
+  cell_annotation_last: results/cells/last_summary.Class.csv
+  cell_annotation_final: results/cells/summarized_annotation.Class.csv
+  viral_contigs: results/virus/summary_last_combined.tsv
+  host_virus_pairs: results/pairing/summary_blast_viruses.Class.tsv
