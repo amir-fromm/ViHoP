@@ -36,7 +36,10 @@ SPAdes/3.15
 BBMap
 BLAST/2.11.0
 seqtk
-
+```
+Host 18S detection also needs **barrnap** (listed in `requirements.txt`; install with conda if missing):
+```
+conda install -c bioconda -c conda-forge barrnap=0.9
 ```
 The specific module names can be changed using the config file. If you don't have these tools installed on your LSF platform, install them on your conda environment.
 

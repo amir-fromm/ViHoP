@@ -6,6 +6,7 @@ _openmp_mutex=4.5=2_gnu
 argparse=1.4.0=pypi_0
 brotlipy=0.7.0=pypi_0
 bzip2=1.0.8=h7f98852_4
+barrnap
 ca-certificates=2022.9.24=ha878542_0
 certifi=2022.9.24=pyhd8ed1ab_0
 cffi=1.15.1=pypi_0
@@ -41,6 +42,7 @@ openjpeg=2.5.0=h7d73246_1
 openssl=3.0.7=h166bdaf_0
 packaging=24.2=pypi_0
 pandas=2.2.3=pypi_0
+fastparquet
 parallel=20160622=1
 perl=5.32.1=2_h7f98852_perl5
 perl-threaded=5.32.1=hdfd78af_1

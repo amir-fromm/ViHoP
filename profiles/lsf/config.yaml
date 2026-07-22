@@ -1,0 +1,17 @@
+# Default LSF profile for Wexac / ViHoP.
+# Prefer: ./vihop  or  ./vihop -n
+
+executor: lsf
+jobs: 50
+latency-wait: 120
+rerun-incomplete: true
+keep-going: false
+printshellcmds: true
+retries: 1
+local-cores: 4
+
+default-resources:
+  - lsf_queue=short
+  - mem_mb=2000
+  - disk_mb=4000
+  - runtime=240

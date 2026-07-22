@@ -1,0 +1,8 @@
+workflow/rules/extraction_generated.smk
+logs/
+results/
+.snakemake/
+**/__pycache__/
+*.pyc
+.DS_Store
+._*

@@ -6,18 +6,96 @@ input:
   sample_table: docs/sample_table_fastq.tsv
 
 references:
+  bam_root: /home/labs/vardi/amirz/pairing/Alps_All_MetaG/ViHoP
   cellranger_transcriptome_fasta: /home/labs/vardi/Collaboration/databases/Gossenkollesee/combined_genemark_metaeuk_genes_dedup.fasta
   pr2_fasta: /home/labs/vardi/Collaboration/databases/pr2/pr2_version_5.0.0_dedup.fasta
   pr2_db: /home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+  metapr2_db: /home/labs/vardi/Collaboration/databases/pr2/metapr2_v2
+  pr2_last_db: /home/labs/vardi/Collaboration/databases/pr2/pr2_v5
   virus_db_fasta: /home/labs/vardi/Collaboration/databases/GVDB/GVDB_markergenes/GVDB.markergenes_prot.faa
+  virus_last_db: /home/labs/vardi/Collaboration/databases/GVDB/GVDB_markergenes_AA
+  general_last_db: /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin
   virus_taxonomy: /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/0626_GV_Mirus_GKS_taxonomic_classification.csv
 
 taxonomy:
   replacement_file: docs/replacement_taxa.tsv
   level: Class
 
+params:
+  choose_cells:
+    min_umi: 10
+    min_gene: 1
+  extraction:
+    threads: 2
+  assembly:
+    threads: 1
+  aggregation:
+    entropy: 0.7
+    threads: 4
+  host:
+    contig_length: 300
+    blast_evalue: "1e-10"
+    blast_threads: 8
+    barrnap_threads: 4
+    # barrnap 1.x renamed euk -> fun; underlying model is still Rfam SSU_rRNA_eukarya.
+    barrnap_kingdom: fun
+    # Optional 18S LAST on per-cell reads (expensive at large scale).
+    run_lastal: false
+    last_threads: 2
+    last_identity: 99
+    last_length: 54
+    last_count: 10
+    blast_identity: 98
+    blast_length: 300
+    blast_prefilter_pident: 90
+    blast_prefilter_length: 100
+    chimeric_percent: 80
+    summary_threads: 4
+  virus:
+    threads: 8
+    identity: 70
+    length: 30
+
+resources:
+  extraction:
+    mem_mb: 2000
+    disk_mb: 4000
+    runtime: 720
+    lsf_queue: short
+  assembly:
+    mem_mb: 2000
+    disk_mb: 4000
+    runtime: 240
+    lsf_queue: short
+  aggregation:
+    mem_mb: 4000
+    disk_mb: 8000
+    runtime: 120
+    lsf_queue: short
+  host:
+    # Modest defaults for test/small queries; raise for large production runs.
+    barrnap_mem_mb: 4000
+    blast_mem_mb: 8000
+    last_mem_mb: 4000
+    summary_mem_mb: 4000
+    disk_mb: 8000
+    runtime: 240
+    lsf_queue: short
+  virus:
+    # LAST with large -i memory; LSF rusage is per-slot, keep total ~16–32 GB.
+    mem_mb: 16000
+    summary_mem_mb: 4000
+    disk_mb: 16000
+    runtime: 720
+    lsf_queue: short
+
 outputs:
-  candidate_cells: results/cells/candidate_cells.tsv
+  candidate_cells: results/candidate_cells.tsv
+  cells_dir: results/cells
+  combined_transcripts: results/assembly/all_cells.transcripts.final.fasta
+  rrna_18s: results/host/18S.rrna.fasta
+  blast_pr2: results/host/all_cells.rRNA.PR2.tsv
+  blast_metapr2: results/host/all_cells.rRNA.metaPR2.tsv
   cell_annotation_blast: results/cells/blast_summary.Class.csv
   cell_annotation_last: results/cells/last_summary.Class.csv
   cell_annotation_final: results/cells/summarized_annotation.Class.csv

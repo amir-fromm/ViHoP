@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Short wrapper around Snakemake with the LSF profile.
+#
+# Examples:
+#   ./vihop -n              # dry-run (foreground)
+#   ./vihop                 # run in background via nohup (recommended)
+#   ./vihop --fg            # run in foreground (e.g. inside tmux)
+#   ./vihop --fg -j 20
+#
+# IMPORTANT: Ctrl-C / killing the Snakemake controller calls `bkill`,
+# which sends SIGINT to compute jobs and makes BAM scans restart from zero.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+PROFILE="$ROOT/profiles/lsf"
+LOGDIR="$ROOT/logs"
+mkdir -p "$LOGDIR"
+
+foreground=0
+args=()
+for arg in "$@"; do
+    case "$arg" in
+        --fg|--foreground) foreground=1 ;;
+        -n|--dry-run|--help|-h|--version) foreground=1; args+=("$arg") ;;
+        *) args+=("$arg") ;;
+    esac
+done
+
+if [[ "$foreground" -eq 1 ]]; then
+    exec snakemake --profile "$PROFILE" "${args[@]+"${args[@]}"}"
+fi
+
+stamp="$(date +%Y%m%d_%H%M%S)"
+out="$LOGDIR/vihop_${stamp}.out"
+pidfile="$LOGDIR/vihop_${stamp}.pid"
+
+nohup snakemake --profile "$PROFILE" "${args[@]+"${args[@]}"}" \
+    >"$out" 2>&1 &
+echo $! >"$pidfile"
+
+echo "ViHoP started in background (PID $(cat "$pidfile"))."
+echo "  log: $out"
+echo "  Follow:  tail -f $out"
+echo "  LSF:     bjobs -u \$USER"
+echo "Do not Ctrl-C this wrapper for cluster jobs; use bkill only if you intend to cancel."
