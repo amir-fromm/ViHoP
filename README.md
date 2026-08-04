@@ -1,166 +1,219 @@
-  
 # ViHoP: Virus-Host Pairing
-A bioinformatic pipeline for pairing viruses to their hosts from environmental single-cell 10x data.
 
-amir.fromm@weizmann.ac.il  
-## What the pipeline does
-This pipeline takes single-cell RNA-sequencing data 10X sequencing and, using viral and host references, produces a matrix of host cells and the viruses that infect them.
-This repository is built to work on an LSF platform since many of the scripts use parallelization.
+**ViHoP** pairs giant viruses to protist hosts from environmental single-cell 10x RNA-seq data.
 
-![alt text](https://github.com/amir-fromm/ViHoP/blob/main/sc_virus_host_detection_pipeline.png?raw=true)
+> Release **v1.0-Gossenkollesee** — Gossenkollesee giant-virus reference, Alps 10x dataset reproduction bundle.
 
-## 1. Installation
-### Cloning this repository
+![Pipeline overview](sc_virus_host_detection_pipeline.png)
+
+## Contents
 
 ```
-git clone https://github.com/amir-fromm/ViHoP.git
-``` 
-Then, go into the directory.
+ViHoP/
+├── README.md
+├── run_pipeline.sh
+├── pairing.config.example
+├── requirements.txt
+├── sc_virus_host_detection_pipeline.png
+├── bin/                               # Pipeline scripts used by run_pipeline.sh (20 scripts)
+├── docs/
+│   ├── sample_table_fastq.tsv
+│   ├── sample_table_Alps.tsv
+│   └── replacement_taxa.tsv
+├── config/
+│   ├── pairing.config.Gossenkollesee  # Config for Gossenkollesee/Alps analysis
+│   ├── pairing.config.Alps
+│   └── pairing.config.Alps.full18s
+└── example_outputs/
 ```
-cd ViHoP
+
+## Prerequisites
+
+### Software
+
+1. **Conda environment** (Python 3.10):
+
+```bash
+conda create --name vihop --file requirements.txt
+conda activate vihop
 ```
-Create an environment with the requirement.txt file
+
+2. **External tools** (installed via LSF modules in the original run; install via conda or system packages if needed):
+
+| Tool | Version used | Purpose |
+|------|-------------|---------|
+| CD-HIT | 4.6.6 | Viral gene deduplication |
+| Cell Ranger | 10.0.0 | 10x count matrix generation |
+| seqtk | — | FASTQ manipulation |
+| TrimGalore | 0.6.5 | Read trimming |
+| SPAdes | 3.15.3 | Per-cell RNA assembly |
+| BBMap (bbduk) | — | Low-complexity filtering |
+| BLAST+ | 2.11.0 | 18S rRNA search |
+| LAST (lastal, lastdb) | 1574 | Viral protein & 18S alignment |
+| barrnap | — | rRNA extraction from contigs |
+
+Module load commands are set in `pairing.config`; adjust for your cluster.
+
+### Reference databases
+
+Download and index before running:
+
+| Database | Source | Used for |
+|----------|--------|----------|
+| Viral gene FASTA | Project-specific (e.g. Gossenkollesee metagenome genes) | Cell Ranger reference, infection detection |
+| PR2 v5 | [pr2-database.org](https://pr2-database.org/) | Host 18S BLAST/lastal |
+| metaPR2 v2 | [metapr2.org](https://app.metapr2.org/metapr2/) | Host 18S BLAST |
+| Giant virus proteins | e.g. [GVDB](https://faylward.github.io/GVDB/) | Viral lastal |
+| RefSeq viruses (masked) | Used for false-positive filtering in viral search | `lastal_search_viruses.sh` |
+| Virus taxonomy CSV | Family-level classification of virus contigs | Host–virus pairing summary |
+
+Build BLAST databases:
+
+```bash
+makeblastdb -in PR2.fasta -dbtype nucl -out pr2_v5
+makeblastdb -in metaPR2.fasta -dbtype nucl -out metapr2_v2
+lastdb -c -P 4 pr2_v5 PR2.fasta
+lastdb -c -p -P 12 virus_last_db virus_proteins.faa
 ```
-conda create --name host-virus-pairing --file requirements.txt
-conda activate host-virus-pairing
+
+### Input data
+
+- **10x Chromium FASTQ files** (dual-lane supported)
+- Tab-delimited **sample table** (`docs/sample_table_fastq.tsv`): one row per sample with columns `sample_name<TAB>fastq_path`
+
+## Setup
+
+1. Create a working directory and copy this package:
+
+```bash
+cp -r ViHoP_submit /path/to/ViHoP_workdir
+cd /path/to/ViHoP_workdir
 ```
 
-### Other dependencies  
+2. Create your config from the template:
 
-Besides the packages from the requirements file, the pipeline also uses modules that were installed in our LSF platform and are called using the module load command:
+```bash
+cp pairing.config.example pairing.config
+# Edit pairing.config: set WD, database paths, FASTQ paths, queue names
 ```
-CD-HIT/4.6.6
-CellRanger/8.0.0
-TrimGalore/0.6.5
-SPAdes/3.15
-BBMap
-BLAST/2.11.0
-seqtk
 
+For the Gossenkollesee/Alps analysis reproduced in this release, use `config/pairing.config.Gossenkollesee` (taxonomic level `Order`, `ANNOTATION_METHOD=blast`, `VIRUS_IDENTITY=70`).
+
+3. Update `docs/sample_table_fastq.tsv` with your sample names and FASTQ paths.
+
+## Running the pipeline
+
+The pipeline is designed for **LSF** job submission (`bsub`). Each stage can be toggled independently via `RUN_*` flags in `pairing.config`.
+
+```bash
+conda activate vihop
+sh run_pipeline.sh
 ```
-The specific module names can be changed using the config file. If you don't have these tools installed on your LSF platform, install them on your conda environment.
 
-## 2. Resources
-### Sample table fastq file
+### Recommended: run stage by stage on first execution
 
-This file, found in the docs folder, is a tab-delimited file of the different samples used in the analysis and the full path to their correspomnding 10X fastq files:
-sample1	/home/user1/fastq/sample1
-sample2	/home/user2/fastq/sample2
+Set all `RUN_*=false` except the stage you want, then enable stages sequentially as outputs appear.
 
-### Common names replacement file
+| Stage | Config flag | Key inputs | Key outputs |
+|-------|-------------|------------|-------------|
+| 1. Database editing | `RUN_DB_EDIT` | Viral gene FASTA | `All_MetaG_CR/` Cell Ranger reference, `*.final.fasta`, `*.gtf` |
+| 2. Cell Ranger count | `RUN_CELL_RANGER` | Reference, FASTQs | `{sample}/outs/filtered_feature_bc_matrix/` |
+| 3. Matrix editing | `RUN_READ_MTX` | Count matrices | `Combined_RAW/data_raw.pickle.gz` |
+| 4. Choose infected cells | `RUN_FIND_INFECTED` | Combined matrix, sample table | `list_cells.tsv` |
+| 5. Read extraction | `RUN_EXTRACT_READS` | `list_cells.tsv`, FASTQs | `assemble_first_cells/all_cells/{cell}/` |
+| 6. Assembly | `RUN_ASSEMBLE_CELLS` | Per-cell reads | `assemble_first_cells/all_cells/{cell}/assembly/transcripts.fasta` |
+| 7. Read editing | `RUN_READ_EDITING` | Per-cell FASTQs | `{cell}_combined.fq.gz` |
+| 8. Transcript editing | `RUN_TRANSCRIPTS_EDITING` | Assembled transcripts | `assemble_first_cells/all_cells.transcripts.final.fasta` |
+| 9. Host 18S BLAST | `RUN_BLAST` | Combined transcripts, PR2/metaPR2 | `blast_results/all_cells.rRNA.PR2.tsv` |
+| 10. Host 18S lastal | `RUN_18S_LAST` | Combined reads, PR2 | `mapped_cells_18s/` |
+| 11. Cell annotation | `RUN_CELL_ANNOTATION` | BLAST/lastal results | `blast_summary.{Level}.csv`, `last_summary.{Level}.csv`, `summarized_annotation.{Level}.csv`, `total_cells.list` |
+| 12. Viral lastal | `RUN_VIRAL_LAST` | Combined transcripts, virus DB | `mapped_cells_virus/summary_last_combined.tsv` |
+| 13. Host–virus pairing | `RUN_VIRAL_SUMMARY` | Viral hits + host annotation | `summary_blast_viruses.{Level}.tsv` |
 
-replacment_file.tsv is a tab-delimited file found in the docs folder, containing four columns:
-level,old_name,new_name,color.
-The replacement file is used to replace the names of specific taxonomic groups with common names in the cell annotation files.
-The first column is the level of the old taxonomic name you want to replace.
-The second column is the old taxonomic name.
-The third column is the new name you want to assign to the taxonomic group.
-The fourth column is a color assigned to the taxonomic group.
-For example:
+## Key output files
 
-Supergroup	Chlorophyta	Green-algae/Plants	#008000
+| File | Description |
+|------|-------------|
+| `summary_blast_viruses.Order.tsv` | Final host–virus pairing table (contig, virus family, host cell, host taxonomy) |
+| `blast_summary.Order.csv` | Per-cell host annotation from 18S BLAST |
+| `last_summary.Order.csv` | Per-cell host annotation from 18S lastal |
+| `summarized_annotation.Order.csv` | Combined non-chimeric host annotations |
+| `total_cells.list` | Barcodes of annotated cells (one per line: `{barcode}.{sample}`) |
+| `virus_contigs.txt` | List of viral contig identifiers |
+| `mapped_cells_virus/summary_last_combined.tsv` | Filtered viral lastal hits |
 
-Result: Cells belonging to the supergroup Chlorophyta will be annotated as Green-algae/Plants and marked green.
+Preview files are in `example_outputs/`.
 
+## Alps analysis parameters
 
-### Making host reference databases
+The Alps run used these settings (see `config/pairing.config.Alps`):
 
-You will need to to download the latest protist host 18s rRNA databases PR2 (version 5) and metaPR2 (version 2) (https://pr2-database.org/, https://app.metapr2.org/metapr2/) and create last and blast db from them:
+- **Samples**: Alps2, Alps5, Alps_Amir
+- **Viral reference**: Gossenkollesee combined genemark/metaeuk genes (98% CD-HIT dedup)
+- **Host annotation level**: Order (`TAXONOMIC_LEVEL=Order`)
+- **Host BLAST filters**: ≥98% identity, ≥300 bp alignment
+- **Chimeric threshold**: 100% (single dominant taxon required)
+- **Viral search**: lastal against Gossenkollesee GV proteins; identity ≥70%, length ≥30
+- **Pairing method**: `ANNOTATION_METHOD=blast` (host annotation from BLAST only)
+- **18S lastal**: disabled (`RUN_18S_LAST=false`)
+
+## Config note
+
+`run_pipeline.sh` expects `RUN_READ_MTX` and `RUN_FIND_INFECTED` (not `RUN_CHOOSE_CELLS`). The template `pairing.config.example` includes all variables required by the script. If using the Alps config files directly, add these lines:
+
+```bash
+RUN_READ_MTX=true
+RUN_FIND_INFECTED=true
+CORES_MTX=1
+MEM_MTX=1024
+DIRS_LIST="Alps2,Alps5,Alps_Amir"
+SUM_UMI=1
+GENE_COUNT=1
+MAX_UMI=1
 ```
-makeblastdb -in db_path/PR2.fasta -blastdb_version 5 -title "PR2" -dbtype nucl -out PR2
-makeblastdb -in db_path/metaPR2.fasta -blastdb_version 5 -title "metaPR2" -dbtype nucl -out metaPR2
-lastdb -c -P 4 PR2 db_path/PR2.fasta
 
+## Standalone script usage
+
+Individual scripts can be run outside the full pipeline:
+
+```bash
+# Choose infected cells
+python bin/choose_cells.py \
+  --data_dir Combined_RAW/ \
+  --sample_table docs/sample_table_fastq.tsv \
+  --output_folder Combined_RAW/ \
+  --sum 1 --count 1 --exp 1
+
+# Summarize host annotations
+python bin/summarize_annotations.py \
+  --last_path last_summary.Order.csv \
+  --blast_path blast_summary.Order.csv \
+  --cell_path total_cells.list \
+  --count_reads 20 --percent 100 --level Order
+
+# Host–virus pairing summary
+python bin/blast_viruses_summary.py \
+  --output_path . \
+  --method blast \
+  --output_name summary_blast_viruses.Order.tsv \
+  --taxa_file /path/to/virus_taxonomy.csv \
+  --blast_file mapped_cells_virus/summary_last_combined.tsv \
+  --annotation_file blast_summary.Order.csv \
+  --threshold 100 --taxa Order \
+  --identity 70 --length 30
 ```
-### Virus taxonomy
 
-A virus database of your choice should be available (you can use Aylward's giant virus database: https://faylward.github.io/GVDB/), and a virus taxonomy table should be available. 
-It is a comma-delimited file where the first column contains the contig name in the virus reference (or part of it), and the second is the virus taxonomy.
-After you download the virus database, make a blast db:
-```
-makeblastdb -in db_path/GVDB.fasta -blastdb_version 5 -title "GVDB" -dbtype nucl -out GVDB
+## Computational requirements
 
-```
-### Fastq files
+- **Cluster**: LSF with `bsub`/`bjobs` (adapt `run_pipeline.sh` for SLURM/PBS if needed)
+- **Memory**: Cell Ranger count ~288 GB per job (48 cores × 6 GB); SPAdes ~2 GB per cell; BLAST summary scales with result size
+- **Storage**: Intermediate per-cell assemblies and FASTQs can reach terabytes; set `DELETE_TMP=true` to remove intermediates after successful runs
+- **Runtime**: Full Alps dataset (3 samples, ~10k cells) requires days to weeks depending on cluster load
 
-You need to specify the path to fastq files of the 10X sequencing.
-The script works on 10x Chromium with 2 lanes.
+## Citation
 
-## 3. Running the pipeline
-### Config file
+If you use ViHoP, please cite the associated publication and the upstream tools (Cell Ranger, SPAdes, PR2, LAST, etc.).
 
-Read the config file thoroughly and adjust the variables to your experiment.
-The pipeline is separated into different stages, and each stage can run separately if the inputs exist.
+## Contact
 
-### Pipeline stages
-
-Each stage can run independently if it has the right inputs. You can skip each stage by changing the RUN parameter associated with each stage from "true" to "false". To run the entire pipeline, change all RUN parameters to true. 
-In the first run, it is recommended to run the pipeline step by step.
-
-#### Database Editing
-
-Editing the viral gene databse to make it suitable for Cell Ranger count. It takes as an input a fasta file of the virus genes you are interested in finding in your data. It will de-duplicate the database at 99% using CD-HIT and create a Cell Ranger reference.
-
-#### Cell ranger count
-
-Using Cell Ranger to find cells expressing viral genes. It takes as an input fastq files and Cell Ranger reference and returns the standard cell-ranger count matrixes.
-
-#### Editing Cell Ranger count matrix 
-
-Editing the Cell Ranger count matrix. Removes empty cells and genes, edits the cell names to include sample names, and saves the output as a pickle file.
-
-#### Choosing infected cells
-
-Infected cells from the Cell Ranger matrix are chosen based on three criteria: the total sum of UMIs in a cell, the expression of the most highly expressed gene,  and the total number of genes expressed in a cell. 
-The output is a tab-delimited table of cells with the full path to their related fastq files.
-
-#### Read extraction
-
-Extracting the reads of each infected cell from the fastq files and storing them in a cell-specific folder. Reads are trimmed using TrimGalore.
-The output is a cell-specific folder with fastq files for each 10X chromium lane.
-
-#### Single-cell assembly
-
-Assembling reads from each cell using RNA SPAdes. 
-The output is a transcript fasta file.
-
-#### Editing reads and assembled transcripts
-
-For each cell, reads from both 10X chromium lanes are combined into a single file and given a cell name (barcode+sample).
-Transcript files are edited so the cell name (barcode+sample) will be attached to each transcript name, and all transcript files are combined.
-The output is one metatranscriptome fasta file of assembled transcripts from all cells marked with cell names.
-
-#### 18s rRNA Blast
-
-The combined metatranscriptome fasta file is compared to the PR2 18s rRNA database.
-First, rRNA transcripts are sorted out using sortmerna.
-The sorted rRNA transcript file is aligned to the PR2 and metaPR2 databases.
-The results are filtered by 99% identity and 100 bp alignment length.
-The outputs are Blast results in the 6 format.
-
-#### 18s rRNA lastal
-
-Trimmed reads from each cell are aligned to the PR2 18s rRNA database using lastal.
-The outputs are tab-delimited lastal results for each cell.
-
-#### Taxonomic annotation summary
-
-The results from both the Blast and lastal search are combined.
-Taxonomic names of specific taxonomic groups are replaced with common names (using the replacement file).
-Only cells that pass the criteria for both Blast and lastal are considered annotated.
-Non-chimeric cells are considered as follows:
-1. In the Blast results, the sum of alignments length to one taxa is at least 90% of the total alignment length for a cell.
-2. In the lastal results, the sum of reads aligned to one taxa is at least 90% of the total aligned reads for a cell, and the number of aligned reads is at least 10.
-3. The results of Blast and lastal are similar.
-
-The outputs are summaries of lastal and Blast results, a combined summary of both, and a file of only non-chimeric annotated cells.
-
-#### Viral Blast
-
-The combined metatranscriptome fasta file is compared to a virus database using Blast.
-The output is Blast results in the 6 format.
-
-#### Host-virus pairing summary
-
-The results from the viral Blast are summarized and are paired with results from the cell annotation.
-The output is a summary of the viral Blast and a file containing the taxonomic assignment of the virus and the hosting cell.
+amir.fromm@weizmann.ac.il

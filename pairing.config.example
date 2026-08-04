@@ -1,0 +1,116 @@
+# ViHoP pairing.config — template for reproducing pipeline outputs
+# Copy to pairing.config and edit paths for your environment:
+#   cp pairing.config.example pairing.config
+
+# --- General ---
+QUEUE_SHORT=short
+QUEUE_LONG=short
+WD=/path/to/ViHoP_workdir          # Working directory (absolute path)
+MAX_MEM=1400000                    # Max cluster memory (MB) for job scheduling
+DELETE_TMP=false                   # Delete intermediate files when true
+
+# --- Stage 1: Database editing (Cell Ranger reference) ---
+RUN_DB_EDIT=true
+DB_VIRUS=/path/to/viral_genes.fasta
+CD_HIT="module load CD-HIT/4.6.6-GCC-10.2.0"
+DEDUP=98                           # CD-HIT identity threshold (e.g. 98 = 0.98)
+CDHIT_CORES=128
+CDHIT_MEM=100
+REF_NAME=All_MetaG_CR
+
+# --- Stage 2: Cell Ranger count ---
+RUN_CELL_RANGER=true
+REF_PATH=/path/to/ViHoP_workdir
+CELL_RANGER="module load CellRanger/10.0.0"
+COUNT_CORES=48
+COUNT_MEM=6000
+MULTIPLE_FASTQ=false
+FASTQDIR='/path/to/10x_fastq_parent_dir'   # Parent dir; subdirs are processed per sample
+EXPECT_CELLS=10000
+CREATE_BAM=true
+CHEMISTRY=auto
+
+# --- Stage 3: Cell Ranger matrix editing ---
+RUN_READ_MTX=true
+CORES_MTX=1
+MEM_MTX=1024
+DIRS_LIST="Alps2,Alps5,Alps_Amir"          # Comma-separated sample IDs with count output
+
+# --- Stage 4: Choose infected cells ---
+RUN_FIND_INFECTED=true
+SAMPLE_TABLE=docs/sample_table_fastq.tsv
+SUM_UMI=1                          # Min total UMIs per cell
+GENE_COUNT=1                       # Min genes expressed per cell
+MAX_UMI=1                          # Min UMIs in most highly expressed gene
+OUTPUT_CELLS=list_cells.tsv
+MEM_CELLS=1024
+CORES_CELLS=1
+LIST_CELLS=list_cells.tsv
+
+# --- Stage 5: Read extraction ---
+RUN_EXTRACT_READS=true
+SEQTK='module load seqtk'
+TRIM='module load TrimGalore/0.6.5'
+MEM_EXTRACT=500
+
+# --- Stage 6: Single-cell assembly ---
+RUN_ASSEMBLE_CELLS=true
+SPADES='module load SPAdes/3.15.3-GCC-11.2.0'
+MEM_SPADES=2000
+CORES_SPADES=1
+
+# --- Stage 7: Read editing ---
+RUN_READ_EDITING=true
+
+# --- Stage 8: Transcript editing ---
+RUN_TRANSCRIPTS_EDITING=true
+BBMAP='module load BBMap'
+ENTROPY=0.7
+
+# --- Stage 9: Host 18S BLAST ---
+RUN_BLAST=true
+SORT_RNA=true
+THREADS_SORTRNA=16
+BLAST='module load BLAST/2.11.0-Linux_x86_64'
+PR2_FASTA=/path/to/pr2_version_5.0.0_dedup.fasta
+PR2_DB=/path/to/pr2_v5
+METAPR2_DB=/path/to/metapr2_v2
+CORES_BLAST=32
+MEM_BLAST=1000
+EVALUE=1e-10
+
+# --- Stage 10: Host 18S lastal ---
+RUN_18S_LAST=false
+MEMORY_LAST=500
+CORES_LAST=4
+PR2_LAST_DB=/path/to/pr2_v5
+LAST_IDENTITY=99
+LAST_LENGTH=88
+
+# --- Stage 11: Cell annotation ---
+RUN_CELL_ANNOTATION=true
+SUMMARIZE_BLAST=true
+SUMMARIZE_LAST=false
+REPLACEMENT_FILE=docs/replacement_taxa.tsv
+LAST_SUMMARY='false'
+TAXONOMIC_LEVEL='Order'            # Annotation | Class | Order
+BLAST_IDENTITY=98
+BLAST_LENGTH=300
+LAST_COUNT=10
+THRESHOLD_CHIMERIC=100
+FINAL_LIST_CELLS=total_cells.list
+
+# --- Stage 12: Viral lastal ---
+RUN_VIRAL_LAST=true
+MEMORY_SEARCH=500
+CORES_SEARCH=128
+LAST_DB_VIRUS_FASTA=/path/to/virus_proteins.faa
+LAST_DB_VIRUS=/path/to/virus_last_db
+
+# --- Stage 13: Host–virus pairing summary ---
+RUN_VIRAL_SUMMARY=true
+VIRUS_TAXONOMY=/path/to/GV_taxonomic_classification.csv
+VIRUS_BLAST_FILE=mapped_cells_virus/summary_last_combined.tsv
+ANNOTATION_METHOD=blast            # blast | last | both
+VIRUS_IDENTITY=70
+VIRUS_LENGTH=30

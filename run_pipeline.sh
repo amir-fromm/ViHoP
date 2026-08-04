@@ -558,7 +558,7 @@ then
     PATH_LAST_SUM=last_summary."$TAXONOMIC_LEVEL".csv 
     PATH_BLAST_SUM=blast_summary."$TAXONOMIC_LEVEL".csv 
     LAST_COUNT_FINAL=$(( LAST_COUNT*2 )) # The minimum number of reads mapped in last must be at least double the lower threshold (to avoid the case of 10 reads mapped to one, 9 mapped to second )
-    bin/summarize_annotations.py --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $LIST_CELLS --count_reads $LAST_COUNT_FINAL --percent $THRESHOLD_CHIMERIC --level $TAXONOMIC_LEVEL
+    bin/summarize_annotations.py --last_path $PATH_LAST_SUM --blast_path $PATH_BLAST_SUM --cell_path $FINAL_LIST_CELLS --count_reads $LAST_COUNT_FINAL --percent $THRESHOLD_CHIMERIC --level $TAXONOMIC_LEVEL
     if [ -e "$PATH_LAST_SUM" ] && [ "$DELETE_TMP" == "true" ]
     then
         rm 18s_last_df.csv
@@ -616,7 +616,20 @@ if [ "$RUN_VIRAL_SUMMARY" == "true" ]
 then
     sleep 1
     echo "Running viral summary"
-    bin/blast_viruses_summary.py --output_path $WD --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file summarized_annotation.$TAXONOMIC_LEVEL.csv --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+    if [ "$ANNOTATION_METHOD" == 'both' ]
+    then
+        bin/blast_viruses_summary.py --output_path $WD --method $ANNOTATION_METHOD --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file summarized_annotation.$TAXONOMIC_LEVEL.csv --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+    
+    elif [ "$ANNOTATION_METHOD" == 'blast' ]
+    then
+        bin/blast_viruses_summary.py --output_path $WD --method $ANNOTATION_METHOD --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file blast_summary.$TAXONOMIC_LEVEL.csv --threshold $THRESHOLD_CHIMERIC --taxa $TAXONOMIC_LEVEL --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+
+    elif [ "$ANNOTATION_METHOD" == 'last' ]
+    then
+        bin/blast_viruses_summary.py --output_path $WD --method $ANNOTATION_METHOD --output_name summary_blast_viruses.$TAXONOMIC_LEVEL.tsv --taxa_file $VIRUS_TAXONOMY --blast_file $VIRUS_BLAST_FILE --annotation_file last_summary.$TAXONOMIC_LEVEL.csv --threshold $THRESHOLD_CHIMERIC --taxa $TAXONOMIC_LEVEL --identity $VIRUS_IDENTITY --length $VIRUS_LENGTH
+    else
+        echo "No such method! Choose last, blat or both. Skipping viral blast"
+    fi
     echo "Done viral summary"
 fi
 

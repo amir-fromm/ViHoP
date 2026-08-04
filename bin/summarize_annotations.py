@@ -44,7 +44,7 @@ def summarize_df(last_df,blast_df):
     # Check if all pass threshold
     full_db = full_db[[ "cell", "Barcode", "Sample", "Blast Annotation", "Blast percent alignment", "Blast max alignment length", "last Annotation", "last number of mapped reads", "last percent mapped reads"]]
     full_db = full_db.sort_values(['cell','Blast percent alignment', 'last number of mapped reads'], ascending=[True, False, False])
-    sum_df = full_db[(full_db['last number of mapped reads'] >= count )  & (full_db['last percent mapped reads'] >= percent) & (full_db['Blast percent alignment'] >= percent)]
+    sum_df = full_db[(full_db['last number of mapped reads'] >= count )  & (full_db['last percent mapped reads'] >= percent) & (full_db['Blast percent alignment'] == 1)]
     sum_df = sum_df[sum_df['Blast Annotation'] == sum_df['last Annotation']]
     return full_db,sum_df
 

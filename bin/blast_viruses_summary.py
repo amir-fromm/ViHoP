@@ -82,6 +82,7 @@ def saving_files(output_path,output_name,tmp_df):
 
 def get_args():
     parser = ArgumentParser(description="Choose a subset of cells that pass a criteria")
+    parser.add_argument("--method", help = "how to annotate the cells: by assmbled contigs ('blast'), raw-reads ('last'), or both ('both'). Default: both", default="both") 
     parser.add_argument("--output_path", help = "Path for the output files", required=True)
     parser.add_argument("--taxa_file", help = "Path for taxonomy file", required=True)
     parser.add_argument("--blast_file", help = "Path for all the virus Blast files", required=True)
@@ -89,6 +90,9 @@ def get_args():
     parser.add_argument("--identity", help = "Threshold for read percent homology", default=90, type = float)
     parser.add_argument("--length", help = "Threshold for alignment length", default=100, type = float)
     parser.add_argument("--output_name", help="Name of output file", default = 'summary_blast_viruses.tsv')
+    # Arguments only if using blast or last-based annotation, and not both
+    parser.add_argument("--taxa", help = "Taxa to annotate the cells by. Default: Class", default='Annotation')
+    parser.add_argument("--threshold", help = "Threshold for chimeric cells (percent matching one organism). Default: 80", default=80, type = int)
 
     return parser.parse_args() 
 
@@ -100,6 +104,7 @@ def main():
     args = get_args()
     print('Summarizing virus blast results...')
     annotation_file = args.annotation_file
+    method = args.method
     blast_file = args.blast_file
     taxa_file = args.taxa_file
     output_path = args.output_path
@@ -107,10 +112,16 @@ def main():
     identity = args.identity
     length = args.length
     
+
     annotation,blast,taxa = load_data(annotation_file,blast_file,taxa_file)
 
     dict_taxonomy = dict(zip(taxa['Virus'],taxa['Family'])) 
-    dict_annotations = dict(zip(annotation['cell'],annotation['Blast Annotation']))
+    if method == 'both':
+        dict_annotations = dict(zip(annotation['cell'],annotation['Blast Annotation']))
+    else:
+        threshold = args.threshold/100
+        annotation_new = annotation[annotation['percent'] >= threshold]
+        dict_annotations = dict(zip(annotation_new['cell'],annotation_new[args.taxa]))
 
 
     blast = edit_blast_table(blast,dict_annotations)

@@ -1,0 +1,111 @@
+# Gerneral variables
+QUEUE_SHORT=short # Name of short lsf queue
+QUEUE_LONG=short
+WD=/home/labs/vardi/amirz/pairing/Alps_All_MetaG/ViHoP # name of working directory
+MAX_MEM=1400000 # Maximum memory available in lsf
+DELETE_TMP=false # Delete temporary files
+
+# Values for database editing
+RUN_DB_EDIT=true 
+DB_VIRUS=/home/labs/vardi/Collaboration/databases/Gossenkollesee/combined_genemark_metaeuk_genes_dedup.fasta  # Database of viruses. Will be used in both the cell ranger count protocol.
+CD_HIT="module load CD-HIT/4.6.6-GCC-10.2.0" # Name of CD-HIT module and version
+DEDUP=98 # percent of deduplication
+CDHIT_CORES=128 # Number of cores to allocate to cd-hit
+CDHIT_MEM=100 # Number of memory per core to allocate to cd-hit
+REF_NAME=All_MetaG_CR # Name the reference for cell ranger
+
+# Values for cell ranger
+RUN_CELL_RANGER=true # Ask if to run cell ranger count stage (in case you don't have cell ranger results)
+REF_PATH=/home/labs/vardi/amirz/pairing/Alps_All_MetaG/ViHoP # Path of the cell ranger reference
+CELL_RANGER="module load CellRanger/10.0.0"
+COUNT_CORES=48 # Number of cores to be used for each cell ranger count job
+COUNT_MEM=6000 # Memory for each core that will be used for cell ranger count job
+MULTIPLE_FASTQ=false # Are there multiple fastq folders
+#FASTQDIR='/home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps2 /home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps5' # List of paths for the folders of the fastq files (space delimited). If the folders have a mutual name, like /sample1, /sample2... use the base name: /sample
+FASTQDIR='/home/labs/vardi/Collaboration/fastq/20240711_LH00211_0067_A222VJWLT1_10X_Patagonia_Eilat_Alps/Alps_Amir' # List of paths for the folders of the fastq files (space delimited). If the folders have a mutual name, like /sample1, /sample2... use the base name: /sample
+#EXPECT_CELLS=20000 # Number of expected cells (depends on the number of cells loaded to the 10x Chromium)
+EXPECT_CELLS=10000 # Number of expected cells (depends on the number of cells loaded to the 10x Chromium)
+#EXPECT_CELLS=false # Number of expected cells (depends on the number of cells loaded to the 10x Chromium)
+CREATE_BAM=true
+CHEMISTRY=auto # Assay configuration. can be detected automatically if specified "auto"
+
+# Values for choosing cells
+RUN_CHOOSE_CELLS=true # Ask if to run protocol for finding infected cells (in case you don't have a list of infected cells)
+SAMPLE_LIST="Alps2,Alps5,Alps_Amir"
+SAMPLE_TABLE=docs/sample_table_fastq.tsv
+MIN_UMI=1
+MIN_GENE=1 # Minimum cells expressing gene (Sum of cells expressing genes)
+OUTPUT_CELLS=list_cells.tsv
+MEM_CELLS=1024
+CORES_CELLS=1
+
+# Values for read extraction
+RUN_EXTRACT_READS=true
+SEQTK='module load seqtk'
+TRIM='module load TrimGalore/0.6.5'
+MEM_EXTRACT=500
+LIST_CELLS=list_cells.tsv
+
+# Values for assembling cells
+RUN_ASSEMBLE_CELLS=true
+SPADES='module load SPAdes/3.15.3-GCC-11.2.0'
+MEM_SPADES=2000 # Default memory for spades
+CORES_SPADES=1
+
+# Values for editing reads
+RUN_READ_EDITING=true
+
+# Values for editing contigs
+RUN_TRANSCRIPTS_EDITING=true
+BBMAP='module load BBMap'
+ENTROPY=0.7
+
+# Values for blast 
+RUN_BLAST=true
+SORT_RNA=true
+THREADS_SORTRNA=16
+BLAST='module load BLAST/2.11.0-Linux_x86_64'
+PR2_FASTA=/home/labs/vardi/Collaboration/databases/pr2/pr2_version_5.0.0_dedup.fasta # path to pr2 database fasta file
+PR2_DB=/home/labs/vardi/Collaboration/databases/pr2/pr2_v5 # path to pr2 database + database intitals
+METAPR2_DB=/home/labs/vardi/Collaboration/databases/pr2/metapr2_v2 # path to pr2 database + database intitals
+CORES_BLAST=32 # number of cores to use for each blast job
+MEM_BLAST=1000 # Amount of memory for blast (need to be more than 2000)
+EVALUE=1e-10 # Evalue threshold
+
+# Values for 18s last
+RUN_18S_LAST=false
+MEMORY_LAST=500
+CORES_LAST=4
+PR2_LAST_DB=/home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+LAST_IDENTITY=99 # Threshold for read percent homology, default=99
+LAST_LENGTH=88 # Threshold for read alignment length, default=85
+
+# Values for cell annotation
+RUN_CELL_ANNOTATION=true
+SUMMARIZE_BLAST=true # To summarize the blast results
+SUMMARIZE_LAST=false # to summarize the lastal results
+REPLACEMENT_FILE=docs/replacement_taxa.tsv
+LAST_SUMMARY='false' # A path for the lastal summary file (an intermediate file), if available, to skip the table concatanation step.
+TAXONOMIC_LEVEL='Order' # The taxonomic level by which to subset the data. Default: "Annotation" (The aggregated common names, by 'replacement_taxa.tsv')
+BLAST_IDENTITY=98
+BLAST_LENGTH=300
+LAST_COUNT=10 # Threshold for number of reads to consider
+THRESHOLD_CHIMERIC=100 # Threshold for percent mapped reads/alignment length to determine if chimeric or not
+FINAL_LIST_CELLS=total_cells.list # A final list of cells to annotate
+
+# Values for virus blast annotation
+RUN_VIRAL_LAST=true
+MEMORY_SEARCH=500
+CORES_SEARCH=128
+LAST_DB_VIRUS_FASTA=/home/labs/vardi/Collaboration/databases/Gossenkollesee/Gossenkollesee_Combined_GV.99.masked.faa
+LAST_DB_VIRUS=/home/labs/vardi/Collaboration/databases/Gossenkollesee/Gossenkollesee_Combined_GV_AA/Gossenkollesee_Combined_GV_AA
+
+# Values for viral summary
+RUN_VIRAL_SUMMARY=true
+VIRUS_TAXONOMY=/home/labs/vardi/Collaboration/databases/Aylward_DB_2024/0626_GV_Mirus_GKS_taxonomic_classification.csv
+VIRUS_BLAST_FILE=mapped_cells_virus/summary_last_combined.tsv
+ANNOTATION_METHOD=blast # how to annotate the cells: by assmbled contigs ("blast"), raw-reads ("last"), or both ("both")
+# might want to adapt the threshold for chimeric cells (cell annotation function) at that point if using a method that is not using the summarized annotation ("both")
+
+VIRUS_IDENTITY=70
+VIRUS_LENGTH=30

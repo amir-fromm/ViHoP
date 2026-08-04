@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+._*
+
+# Office temp files
+~$*
+*.xlsx
+
+# Pipeline working data (not part of the release)
+All_MetaG_CR/
+Alps*/
+assemble_first_cells/
+blast_results/
+figures/
+Gossen_DB/
+log/
+log_*/
+mapped_cells_*/
+scDNA_mapped_cells_virus/
+tmp/
+
+# Large sequence and analysis outputs
+*.h5ad
+*.fasta
+*.fasta.*
+*.fai
+*.gtf
+*.clstr
+*.fq
+*.fq.gz
+*.bam
+*.pickle.gz
+*.parquet
+
+# Local runtime outputs at repo root
+/pairing.config
+/*.csv
+/*.tsv
+/*.txt
+/*.list
+/*.pdf
+/*.html
+/*.png
+!/sc_virus_host_detection_pipeline.png
+
+# Keep docs and example_outputs tracked
+!docs/**
+!example_outputs/**
+!config/**
