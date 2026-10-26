@@ -2,43 +2,48 @@
 
 **ViHoP** pairs giant viruses to protist hosts from environmental single-cell 10x RNA-seq data.
 
-> Release **v1.0-Gossenkollesee** — Gossenkollesee giant-virus reference, Alps 10x dataset reproduction bundle.
+> Release **v1.0-Gossenkollesee** — Gossenkollesee giant-virus reference, Gossenkollesee 10x dataset reproduction bundle.
 
 ![Pipeline overview](sc_virus_host_detection_pipeline.png)
+
+**Code availability:** https://github.com/amir-fromm/ViHoP/ (MIT License; tag `v1.0-Gossenkollesee`). Pipeline design and parameters are described in the manuscript **Methods**.
 
 ## Contents
 
 ```
 ViHoP/
 ├── README.md
+├── LICENSE
+├── environment.yml          # lightweight conda env (demo + Python stages)
+├── requirements.txt         # full conda lock from linux-64 run
 ├── run_pipeline.sh
 ├── pairing.config.example
-├── requirements.txt
-├── sc_virus_host_detection_pipeline.png
-├── bin/                               # Pipeline scripts used by run_pipeline.sh (20 scripts)
+├── bin/                     # pipeline scripts
+├── demo/                    # small real-cell FASTQ demo (see Demo)
 ├── docs/
+│   ├── sample_table_Gossenkollesee.tsv
 │   ├── sample_table_fastq.tsv
-│   ├── sample_table_Alps.tsv
 │   └── replacement_taxa.tsv
 ├── config/
-│   ├── pairing.config.Gossenkollesee  # Config for Gossenkollesee/Alps analysis
-│   ├── pairing.config.Alps
-│   └── pairing.config.Alps.full18s
-└── example_outputs/
+│   ├── pairing.config.Gossenkollesee          # manuscript Order/BLAST pairing
+│   └── pairing.config.Gossenkollesee.full18s  # with 18S lastal
+└── example_outputs/         # preview tables from the run
 ```
 
-## Prerequisites
+## 1. System requirements
 
-### Software
+### Operating system
 
-1. **Conda environment** (Python 3.10):
+- **Tested on:** Linux (Weizmann Wexac LSF cluster; RHEL/Rocky-class compute nodes)
+- **Demo:** macOS or Linux desktop/laptop with conda + Python 3.10
+- Full pipeline assumes an HPC scheduler (`bsub`); adapt `run_pipeline.sh` for SLURM/PBS if needed
 
-```bash
-conda create --name vihop --file requirements.txt
-conda activate vihop
-```
+### Software dependencies (versions used for Gossenkollesee)
 
-2. **External tools** (installed via LSF modules in the original run; install via conda or system packages if needed):
+**Python (conda):** Python 3.10 with numpy, pandas, scipy, scikit-learn, scprep, pyyaml, tqdm  
+- Install from [`environment.yml`](environment.yml) (recommended for demo), or bit-for-bit Gossenkollesee lock via [`requirements.txt`](requirements.txt) (`conda create --name vihop --file requirements.txt`, linux-64).
+
+**External binaries** (LSF modules in the original run; conda/bioconda or site modules elsewhere):
 
 | Tool | Version used | Purpose |
 |------|-------------|---------|
@@ -52,11 +57,15 @@ conda activate vihop
 | LAST (lastal, lastdb) | 1574 | Viral protein & 18S alignment |
 | barrnap | — | rRNA extraction from contigs |
 
-Module load commands are set in `pairing.config`; adjust for your cluster.
+Module load commands are set in `pairing.config`.
 
-### Reference databases
+### Hardware
 
-Download and index before running:
+- **No non-standard hardware** (no GPU/FPGA required).
+- **Demo:** normal laptop/desktop, &lt;4 GB RAM.
+- **Full Gossenkollesee pipeline:** LSF cluster; Cell Ranger ~tens–hundreds of GB RAM per sample; intermediate storage can reach terabytes.
+
+### Reference databases (full pipeline only)
 
 | Database | Source | Used for |
 |----------|--------|----------|
@@ -64,155 +73,100 @@ Download and index before running:
 | PR2 v5 | [pr2-database.org](https://pr2-database.org/) | Host 18S BLAST/lastal |
 | metaPR2 v2 | [metapr2.org](https://app.metapr2.org/metapr2/) | Host 18S BLAST |
 | Giant virus proteins | e.g. [GVDB](https://faylward.github.io/GVDB/) | Viral lastal |
-| RefSeq viruses (masked) | Used for false-positive filtering in viral search | `lastal_search_viruses.sh` |
-| Virus taxonomy CSV | Family-level classification of virus contigs | Host–virus pairing summary |
+| RefSeq viruses (masked) | False-positive filtering | `lastal_search_viruses.sh` |
+| Virus taxonomy CSV | Family-level classification | Host–virus pairing summary |
 
-Build BLAST databases:
-
-```bash
-makeblastdb -in PR2.fasta -dbtype nucl -out pr2_v5
-makeblastdb -in metaPR2.fasta -dbtype nucl -out metapr2_v2
-lastdb -c -P 4 pr2_v5 PR2.fasta
-lastdb -c -p -P 12 virus_last_db virus_proteins.faa
-```
-
-### Input data
-
-- **10x Chromium FASTQ files** (dual-lane supported)
-- Tab-delimited **sample table** (`docs/sample_table_fastq.tsv`): one row per sample with columns `sample_name<TAB>fastq_path`
-
-## Setup
-
-1. Create a working directory and copy this package:
+## 2. Installation guide
 
 ```bash
-cp -r ViHoP_submit /path/to/ViHoP_workdir
-cd /path/to/ViHoP_workdir
+git clone https://github.com/amir-fromm/ViHoP.git
+cd ViHoP
+conda env create -f environment.yml
+conda activate vihop
 ```
 
-2. Create your config from the template:
+**Typical install time** on a normal desktop: about **5–15 minutes** (conda solve + package download; longer on first bioconda use or slow networks).
+
+For a Gossenkollesee-identical linux-64 lockfile instead:
+
+```bash
+conda create --name vihop --file requirements.txt
+conda activate vihop
+```
+
+## 3. Demo
+
+A small dataset of **two real Gossenkollesee cells** (combined FASTQs + assembled transcripts from the manuscript analysis), with host annotations and viral lastal hits for the pairing stage. Sample IDs (`Alps5`, `Alps_Amir`) are the original 10x library folder names.
+
+| Cell | Sample ID |
+|------|-----------|
+| `AATCGGCTCTGGATGC` | Alps5 |
+| `ACATCCCTCTATGCCC` | Alps_Amir |
+
+```bash
+conda activate vihop
+bash demo/run_demo.sh
+```
+
+- **What it runs:** `bin/blast_viruses_summary.py` (host–virus pairing summary; Gossenkollesee thresholds: identity ≥70%, length ≥30, `Order`, blast annotation).
+- **Expected output:** tables matching `demo/expected/summary_blast_viruses.Order.tsv` and `demo/expected/virus_contigs.txt`; script prints `PASS`.
+- **Expected runtime:** under **1 minute** on a normal desktop/laptop.
+- FASTQs live under `demo/input/cells/` (~1.5 MB total). Details: [`demo/README.md`](demo/README.md).
+
+This demo does **not** re-run Cell Ranger or SPAdes.
+
+## 4. Instructions for use
+
+### Setup for your data
 
 ```bash
 cp pairing.config.example pairing.config
-# Edit pairing.config: set WD, database paths, FASTQ paths, queue names
+# Edit pairing.config: WD, database paths, FASTQ paths, queue names
+# Update docs/sample_table_fastq.tsv: sample_name<TAB>fastq_path
 ```
 
-For the Gossenkollesee/Alps analysis reproduced in this release, use `config/pairing.config.Gossenkollesee` (taxonomic level `Order`, `ANNOTATION_METHOD=blast`, `VIRUS_IDENTITY=70`).
+For the Gossenkollesee manuscript analysis, start from `config/pairing.config.Gossenkollesee` (or `config/pairing.config.Gossenkollesee.full18s` if enabling 18S lastal).
 
-3. Update `docs/sample_table_fastq.tsv` with your sample names and FASTQ paths.
-
-## Running the pipeline
-
-The pipeline is designed for **LSF** job submission (`bsub`). Each stage can be toggled independently via `RUN_*` flags in `pairing.config`.
+### Run
 
 ```bash
 conda activate vihop
 sh run_pipeline.sh
 ```
 
-### Recommended: run stage by stage on first execution
+Stages are toggled with `RUN_*` flags. Recommended: enable one stage at a time on first execution.
 
-Set all `RUN_*=false` except the stage you want, then enable stages sequentially as outputs appear.
+| Stage | Config flag | Key outputs |
+|-------|-------------|-------------|
+| 1. Database editing | `RUN_DB_EDIT` | Cell Ranger reference, `*.final.fasta`, `*.gtf` |
+| 2. Cell Ranger count | `RUN_CELL_RANGER` | `{sample}/outs/filtered_feature_bc_matrix/` |
+| 3. Matrix editing | `RUN_READ_MTX` | `Combined_RAW/data_raw.pickle.gz` |
+| 4. Choose infected cells | `RUN_FIND_INFECTED` | `list_cells.tsv` |
+| 5. Read extraction | `RUN_EXTRACT_READS` | `assemble_first_cells/all_cells/{cell}/` |
+| 6. Assembly | `RUN_ASSEMBLE_CELLS` | `{cell}/assembly/transcripts.fasta` |
+| 7–8. Read/transcript editing | `RUN_READ_EDITING` / `RUN_TRANSCRIPTS_EDITING` | combined FASTQs / final transcripts |
+| 9–11. Host annotation | `RUN_BLAST` / `RUN_18S_LAST` / `RUN_CELL_ANNOTATION` | `blast_summary.{Level}.csv`, etc. |
+| 12–13. Viral lastal + pairing | `RUN_VIRAL_LAST` / `RUN_VIRAL_SUMMARY` | `summary_blast_viruses.{Level}.tsv` |
 
-| Stage | Config flag | Key inputs | Key outputs |
-|-------|-------------|------------|-------------|
-| 1. Database editing | `RUN_DB_EDIT` | Viral gene FASTA | `All_MetaG_CR/` Cell Ranger reference, `*.final.fasta`, `*.gtf` |
-| 2. Cell Ranger count | `RUN_CELL_RANGER` | Reference, FASTQs | `{sample}/outs/filtered_feature_bc_matrix/` |
-| 3. Matrix editing | `RUN_READ_MTX` | Count matrices | `Combined_RAW/data_raw.pickle.gz` |
-| 4. Choose infected cells | `RUN_FIND_INFECTED` | Combined matrix, sample table | `list_cells.tsv` |
-| 5. Read extraction | `RUN_EXTRACT_READS` | `list_cells.tsv`, FASTQs | `assemble_first_cells/all_cells/{cell}/` |
-| 6. Assembly | `RUN_ASSEMBLE_CELLS` | Per-cell reads | `assemble_first_cells/all_cells/{cell}/assembly/transcripts.fasta` |
-| 7. Read editing | `RUN_READ_EDITING` | Per-cell FASTQs | `{cell}_combined.fq.gz` |
-| 8. Transcript editing | `RUN_TRANSCRIPTS_EDITING` | Assembled transcripts | `assemble_first_cells/all_cells.transcripts.final.fasta` |
-| 9. Host 18S BLAST | `RUN_BLAST` | Combined transcripts, PR2/metaPR2 | `blast_results/all_cells.rRNA.PR2.tsv` |
-| 10. Host 18S lastal | `RUN_18S_LAST` | Combined reads, PR2 | `mapped_cells_18s/` |
-| 11. Cell annotation | `RUN_CELL_ANNOTATION` | BLAST/lastal results | `blast_summary.{Level}.csv`, `last_summary.{Level}.csv`, `summarized_annotation.{Level}.csv`, `total_cells.list` |
-| 12. Viral lastal | `RUN_VIRAL_LAST` | Combined transcripts, virus DB | `mapped_cells_virus/summary_last_combined.tsv` |
-| 13. Host–virus pairing | `RUN_VIRAL_SUMMARY` | Viral hits + host annotation | `summary_blast_viruses.{Level}.tsv` |
+### Reproducing manuscript Gossenkollesee results (optional)
 
-## Key output files
+Use `config/pairing.config.Gossenkollesee` with the three 10x libraries `Alps2`, `Alps5`, `Alps_Amir` (see `docs/sample_table_Gossenkollesee.tsv`):
 
-| File | Description |
-|------|-------------|
-| `summary_blast_viruses.Order.tsv` | Final host–virus pairing table (contig, virus family, host cell, host taxonomy) |
-| `blast_summary.Order.csv` | Per-cell host annotation from 18S BLAST |
-| `last_summary.Order.csv` | Per-cell host annotation from 18S lastal |
-| `summarized_annotation.Order.csv` | Combined non-chimeric host annotations |
-| `total_cells.list` | Barcodes of annotated cells (one per line: `{barcode}.{sample}`) |
-| `virus_contigs.txt` | List of viral contig identifiers |
-| `mapped_cells_virus/summary_last_combined.tsv` | Filtered viral lastal hits |
+- Host level `Order`; BLAST ≥98% identity, ≥300 bp; chimeric threshold 100%
+- Viral lastal identity ≥70%, length ≥30; `ANNOTATION_METHOD=blast`
+- Key result table: `summary_blast_viruses.Order.tsv` (preview in `example_outputs/`)
 
-Preview files are in `example_outputs/`.
+**Runtime:** full Gossenkollesee dataset (3 samples, ~10k cells) takes **days to weeks** on a busy LSF cluster. Memory: Cell Ranger was run at high RAM (order of ~288 GB per job in the original setup); SPAdes ~2 GB per cell.
 
-## Alps analysis parameters
+`run_pipeline.sh` expects `RUN_READ_MTX` and `RUN_FIND_INFECTED` (provided in the Gossenkollesee configs above). Copy the chosen file to `pairing.config` and set `WD` before running.
 
-The Alps run used these settings (see `config/pairing.config.Alps`):
+## License
 
-- **Samples**: Alps2, Alps5, Alps_Amir
-- **Viral reference**: Gossenkollesee combined genemark/metaeuk genes (98% CD-HIT dedup)
-- **Host annotation level**: Order (`TAXONOMIC_LEVEL=Order`)
-- **Host BLAST filters**: ≥98% identity, ≥300 bp alignment
-- **Chimeric threshold**: 100% (single dominant taxon required)
-- **Viral search**: lastal against Gossenkollesee GV proteins; identity ≥70%, length ≥30
-- **Pairing method**: `ANNOTATION_METHOD=blast` (host annotation from BLAST only)
-- **18S lastal**: disabled (`RUN_18S_LAST=false`)
-
-## Config note
-
-`run_pipeline.sh` expects `RUN_READ_MTX` and `RUN_FIND_INFECTED` (not `RUN_CHOOSE_CELLS`). The template `pairing.config.example` includes all variables required by the script. If using the Alps config files directly, add these lines:
-
-```bash
-RUN_READ_MTX=true
-RUN_FIND_INFECTED=true
-CORES_MTX=1
-MEM_MTX=1024
-DIRS_LIST="Alps2,Alps5,Alps_Amir"
-SUM_UMI=1
-GENE_COUNT=1
-MAX_UMI=1
-```
-
-## Standalone script usage
-
-Individual scripts can be run outside the full pipeline:
-
-```bash
-# Choose infected cells
-python bin/choose_cells.py \
-  --data_dir Combined_RAW/ \
-  --sample_table docs/sample_table_fastq.tsv \
-  --output_folder Combined_RAW/ \
-  --sum 1 --count 1 --exp 1
-
-# Summarize host annotations
-python bin/summarize_annotations.py \
-  --last_path last_summary.Order.csv \
-  --blast_path blast_summary.Order.csv \
-  --cell_path total_cells.list \
-  --count_reads 20 --percent 100 --level Order
-
-# Host–virus pairing summary
-python bin/blast_viruses_summary.py \
-  --output_path . \
-  --method blast \
-  --output_name summary_blast_viruses.Order.tsv \
-  --taxa_file /path/to/virus_taxonomy.csv \
-  --blast_file mapped_cells_virus/summary_last_combined.tsv \
-  --annotation_file blast_summary.Order.csv \
-  --threshold 100 --taxa Order \
-  --identity 70 --length 30
-```
-
-## Computational requirements
-
-- **Cluster**: LSF with `bsub`/`bjobs` (adapt `run_pipeline.sh` for SLURM/PBS if needed)
-- **Memory**: Cell Ranger count ~288 GB per job (48 cores × 6 GB); SPAdes ~2 GB per cell; BLAST summary scales with result size
-- **Storage**: Intermediate per-cell assemblies and FASTQs can reach terabytes; set `DELETE_TMP=true` to remove intermediates after successful runs
-- **Runtime**: Full Alps dataset (3 samples, ~10k cells) requires days to weeks depending on cluster load
+MIT — see [`LICENSE`](LICENSE).
 
 ## Citation
 
-If you use ViHoP, please cite the associated publication and the upstream tools (Cell Ranger, SPAdes, PR2, LAST, etc.).
+If you use ViHoP, please cite the preprint: Single-cell-resolved natural giant virus infections reveal conserved protist immunity (https://www.biorxiv.org/content/10.64898/2026.10.11.758280v1) and upstream tools (Cell Ranger, SPAdes, PR2, LAST, etc.).
 
 ## Contact
 

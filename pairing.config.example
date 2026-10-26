@@ -34,7 +34,7 @@ CHEMISTRY=auto
 RUN_READ_MTX=true
 CORES_MTX=1
 MEM_MTX=1024
-DIRS_LIST="Alps2,Alps5,Alps_Amir"          # Comma-separated sample IDs with count output
+DIRS_LIST="Alps2,Alps5,Alps_Amir"          # Gossenkollesee 10x library IDs (comma-separated)
 
 # --- Stage 4: Choose infected cells ---
 RUN_FIND_INFECTED=true
