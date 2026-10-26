@@ -1,0 +1,120 @@
+# ViHoP config — Gossenkollesee variant with host 18S lastal enabled
+# (TAXONOMIC_LEVEL=Annotation, chimeric threshold 80, virus identity 90).
+# Copy to pairing.config in your workdir:
+#   cp config/pairing.config.Gossenkollesee.full18s pairing.config
+#
+# Sample folder IDs Alps2 / Alps5 / Alps_Amir are the original 10x library names.
+
+# --- General ---
+QUEUE_SHORT=short
+QUEUE_LONG=short
+WD=/home/labs/vardi/amirz/pairing/Alps_All_MetaG/ViHoP
+MAX_MEM=1400000
+DELETE_TMP=false
+
+# --- Stage 1: Database editing (Cell Ranger reference) ---
+RUN_DB_EDIT=true
+DB_VIRUS=/home/labs/vardi/Collaboration/databases/Gossenkollesee/combined_genemark_metaeuk_genes_dedup.fasta
+CD_HIT="module load CD-HIT/4.6.6-GCC-10.2.0"
+DEDUP=98
+CDHIT_CORES=128
+CDHIT_MEM=100
+REF_NAME=All_MetaG_CR
+
+# --- Stage 2: Cell Ranger count ---
+RUN_CELL_RANGER=true
+REF_PATH=/home/labs/vardi/amirz/pairing/Alps_All_MetaG/ViHoP
+CELL_RANGER="module load CellRanger/10.0.0"
+COUNT_CORES=48
+COUNT_MEM=6000
+MULTIPLE_FASTQ=false
+#FASTQDIR='/home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps2 /home/labs/vardi/Collaboration/fastq/20250218_LH00211_0257_A2257TFLT1_10X_Alps_ReseqEilat/Alps5'
+FASTQDIR='/home/labs/vardi/Collaboration/fastq/20240711_LH00211_0067_A222VJWLT1_10X_Patagonia_Eilat_Alps/Alps_Amir'
+EXPECT_CELLS=10000
+CREATE_BAM=true
+CHEMISTRY=auto
+
+# --- Stage 3: Cell Ranger matrix editing ---
+RUN_READ_MTX=true
+CORES_MTX=1
+MEM_MTX=1024
+DIRS_LIST="Alps2,Alps5,Alps_Amir"
+
+# --- Stage 4: Choose infected cells ---
+RUN_FIND_INFECTED=true
+SAMPLE_TABLE=docs/sample_table_Gossenkollesee.tsv
+SUM_UMI=1
+GENE_COUNT=1
+MAX_UMI=1
+OUTPUT_CELLS=list_cells.tsv
+MEM_CELLS=1024
+CORES_CELLS=1
+LIST_CELLS=list_cells.tsv
+
+# --- Stage 5: Read extraction ---
+RUN_EXTRACT_READS=true
+SEQTK='module load seqtk'
+TRIM='module load TrimGalore/0.6.5'
+MEM_EXTRACT=500
+
+# --- Stage 6: Single-cell assembly ---
+RUN_ASSEMBLE_CELLS=true
+SPADES='module load SPAdes/3.15.3-GCC-11.2.0'
+MEM_SPADES=2000
+CORES_SPADES=1
+
+# --- Stage 7: Read editing ---
+RUN_READ_EDITING=true
+
+# --- Stage 8: Transcript editing ---
+RUN_TRANSCRIPTS_EDITING=true
+BBMAP='module load BBMap'
+ENTROPY=0.7
+
+# --- Stage 9: Host 18S BLAST ---
+RUN_BLAST=true
+SORT_RNA=true
+THREADS_SORTRNA=16
+BLAST='module load BLAST/2.11.0-Linux_x86_64'
+PR2_FASTA=/home/labs/vardi/Collaboration/databases/pr2/pr2_version_5.0.0_dedup.fasta
+PR2_DB=/home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+METAPR2_DB=/home/labs/vardi/Collaboration/databases/pr2/metapr2_v2
+CORES_BLAST=32
+MEM_BLAST=1000
+EVALUE=1e-10
+
+# --- Stage 10: Host 18S lastal ---
+RUN_18S_LAST=true
+MEMORY_LAST=500
+CORES_LAST=4
+PR2_LAST_DB=/home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+LAST_IDENTITY=99
+LAST_LENGTH=88
+
+# --- Stage 11: Cell annotation ---
+RUN_CELL_ANNOTATION=true
+SUMMARIZE_BLAST=true
+SUMMARIZE_LAST=true
+REPLACEMENT_FILE=docs/replacement_taxa.tsv
+LAST_SUMMARY='false'
+TAXONOMIC_LEVEL='Annotation'
+BLAST_IDENTITY=98
+BLAST_LENGTH=300
+LAST_COUNT=10
+THRESHOLD_CHIMERIC=80
+FINAL_LIST_CELLS=total_cells.list
+
+# --- Stage 12: Viral lastal ---
+RUN_VIRAL_LAST=true
+MEMORY_SEARCH=500
+CORES_SEARCH=128
+LAST_DB_VIRUS_FASTA=/home/labs/vardi/Collaboration/databases/Gossenkollesee/Gossenkollesee_Combined_GV_AIL3.99.masked.faa
+LAST_DB_VIRUS=/home/labs/vardi/Collaboration/databases/Gossenkollesee/Gossenkollesee_Combined_GV_AA/Gossenkollesee_Combined_GV_AA
+
+# --- Stage 13: Host–virus pairing summary ---
+RUN_VIRAL_SUMMARY=true
+VIRUS_TAXONOMY=/home/labs/vardi/Collaboration/databases/Aylward_DB_2024/GV_Mirus_GKS_taxonomic_classification.csv
+VIRUS_BLAST_FILE=mapped_cells_virus/summary_last_combined.tsv
+ANNOTATION_METHOD=both
+VIRUS_IDENTITY=90
+VIRUS_LENGTH=30

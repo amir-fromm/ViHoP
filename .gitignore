@@ -43,7 +43,15 @@ tmp/
 /*.png
 !/sc_virus_host_detection_pipeline.png
 
-# Keep docs and example_outputs tracked
+# Keep docs, example_outputs, and demo tracked
 !docs/**
 !example_outputs/**
 !config/**
+!demo/**
+!demo/**/*.fq.gz
+!demo/**/*.fasta
+!demo/**/*.tsv
+!demo/**/*.csv
+!demo/**/*.txt
+!demo/**/*.sh
+!demo/**/*.md

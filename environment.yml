@@ -1,0 +1,19 @@
+# Lightweight conda env for ViHoP Python stages and the laptop demo.
+# For a full lock matching the Alps cluster run, see requirements.txt
+# (conda list --export, linux-64).
+name: vihop
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - pyyaml
+  - tqdm
+  - pip
+  - pip:
+      - scprep
