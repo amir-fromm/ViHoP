@@ -73,7 +73,7 @@ Module load commands are set in `pairing.config`.
 | PR2 v5 | [pr2-database.org](https://pr2-database.org/) | Host 18S BLAST/lastal |
 | metaPR2 v2 | [metapr2.org](https://app.metapr2.org/metapr2/) | Host 18S BLAST |
 | Giant virus proteins | e.g. [GVDB](https://faylward.github.io/GVDB/) | Viral lastal |
-| RefSeq viruses (masked) | False-positive filtering | `lastal_search_viruses.sh` |
+| RefSeq + viruses (masked) | False-positive filtering | `lastal_search_viruses.sh` |
 | Virus taxonomy CSV | Family-level classification | Host–virus pairing summary |
 
 ## 2. Installation guide
@@ -156,7 +156,7 @@ Use `config/pairing.config.Gossenkollesee` with the three 10x libraries `Alps2`,
 - Viral lastal identity ≥70%, length ≥30; `ANNOTATION_METHOD=blast`
 - Key result table: `summary_blast_viruses.Order.tsv` (preview in `example_outputs/`)
 
-**Runtime:** full Gossenkollesee dataset (3 samples, ~10k cells) takes **days to weeks** on a busy LSF cluster. Memory: Cell Ranger was run at high RAM (order of ~288 GB per job in the original setup); SPAdes ~2 GB per cell.
+**Runtime:** full Gossenkollesee dataset (3 samples, ~10k cells) takes **days** on a busy LSF cluster. Memory: Cell Ranger was run at high RAM (order of ~288 GB per job in the original setup); SPAdes ~2 GB per cell.
 
 `run_pipeline.sh` expects `RUN_READ_MTX` and `RUN_FIND_INFECTED` (provided in the Gossenkollesee configs above). Copy the chosen file to `pairing.config` and set `WD` before running.
 
