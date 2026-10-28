@@ -65,6 +65,7 @@ Module load commands are set in `pairing.config`.
 - **Demo:** normal laptop/desktop, &lt;4 GB RAM.
 - **Full Gossenkollesee pipeline:** LSF cluster; Cell Ranger ~tens–hundreds of GB RAM per sample; intermediate storage can reach terabytes.
 
+
 ### Reference databases (full pipeline only)
 
 | Database | Source | Used for |
@@ -126,7 +127,7 @@ cp pairing.config.example pairing.config
 ```
 
 For the Gossenkollesee manuscript analysis, start from `config/pairing.config.Gossenkollesee` (or `config/pairing.config.Gossenkollesee.full18s` if enabling 18S lastal).
-
+- To reproduce the results, download the single-cell fastq from PRJNA1537990
 ### Run
 
 ```bash
