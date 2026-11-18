@@ -1,28 +1,16 @@
-# Phase 4: tag, combine, and complexity-filter assembled transcripts.
-
-rule edit_cell_transcripts:
-    input:
-        transcripts="results/cells/{cell}/transcripts.fasta",
-    output:
-        edited="results/cells/{cell}/transcripts.edit.fasta",
-    wildcard_constraints:
-        cell="[^/]+",
-    shell:
-        """
-        # Match legacy editing_contigs_array.sh: append _CELL to headers.
-        sed "s/>.*/&_{wildcards.cell}/" {input.transcripts} > {output.edited}
-        """
-
+# Phase 4: combine edited transcripts (headers are tagged inside assemble_batch).
 
 rule combine_transcripts:
     input:
-        edited=lambda wildcards: all_cell_transcripts_edit(CANDIDATE_CELLS),
+        batches=expand("results/assembly/batches/{batch}.done", batch=ASSEMBLY_BATCHES),
+        candidates=CANDIDATE_CELLS,
     output:
         combined="results/assembly/all_cells.transcripts.edit.fasta",
+    params:
+        script=vihop_script("workflow/scripts/combine_edited_transcripts.py"),
     shell:
         """
-        mkdir -p results/assembly
-        cat {input.edited} > {output.combined}
+        python {params.script} {input.candidates} {output.combined}
         """
 
 
@@ -33,7 +21,7 @@ rule filter_low_complexity:
         final=config["outputs"]["combined_transcripts"],
         low_complexity="results/assembly/low_complexity.fq",
     params:
-        script="workflow/scripts/run_bbduk_filter.sh",
+        script=vihop_script("workflow/scripts/run_bbduk_filter.sh"),
         entropy=config["params"]["aggregation"]["entropy"],
     threads: config["params"]["aggregation"]["threads"]
     resources:
@@ -47,5 +35,32 @@ rule filter_low_complexity:
             {input.combined} \
             {output.final} \
             {output.low_complexity} \
-            {params.entropy}
+            {params.entropy} \
+            {resources.mem_mb}
+        """
+
+
+# Local. Depends on the filtered FASTA so it runs after BBDuk.
+rule assembly_qc:
+    input:
+        final=config["outputs"]["combined_transcripts"],
+        low_complexity="results/assembly/low_complexity.fq",
+        candidates=CANDIDATE_CELLS,
+    output:
+        tsv="results/assembly/assembly_qc.tsv",
+        txt="results/assembly/assembly_qc.txt",
+    params:
+        script=vihop_script("workflow/scripts/assembly_qc.py"),
+        cells_dir=config["outputs"]["cells_dir"],
+    threads: 4
+    shell:
+        """
+        python {params.script} \
+            --fasta {input.final} \
+            --candidates {input.candidates} \
+            --cells-dir {params.cells_dir} \
+            --low-complexity {input.low_complexity} \
+            --output-tsv {output.tsv} \
+            --output-txt {output.txt} \
+            --threads {threads}
         """

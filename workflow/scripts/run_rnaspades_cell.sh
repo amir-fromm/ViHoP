@@ -28,8 +28,17 @@ fi
 outdir="$(dirname "$output")"
 mkdir -p "$outdir"
 
-workdir="$(mktemp -d "${TMPDIR:-/tmp}/vihop_spades.XXXXXX")"
-cleanup() { rm -rf "$workdir"; }
+# Keep the SPAdes work directory beside the cell output. Node /tmp is shared
+# by every assembly job on the machine and those directories were removed
+# while SPAdes was still copying into them. A killed job can leave a
+# previous work directory behind; remove only those before starting.
+find "$outdir" -mindepth 1 -maxdepth 1 -type d -name 'spades_work.*' -exec rm -rf {} +
+workdir="$(mktemp -d "$outdir/spades_work.XXXXXX")"
+cleanup() {
+    case "${workdir:-}" in
+        "$outdir"/spades_work.*) rm -rf "$workdir" ;;
+    esac
+}
 trap cleanup EXIT
 
 echo "[assemble] reads=$reads threads=$threads workdir=$workdir"

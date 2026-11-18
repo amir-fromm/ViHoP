@@ -1,16 +1,33 @@
 # Default LSF profile for Wexac / ViHoP.
-# Prefer: ./vihop  or  ./vihop -n
+# Prefer: ./vihop  (foreground progress)  or  ./vihop -n  /  ./vihop --bg
 
 executor: lsf
-jobs: 50
+# Assembly reserves ~1 GB and finishes in seconds; 200 keeps the short queue busy.
+jobs: 200
 latency-wait: 120
 rerun-incomplete: true
-keep-going: false
+# Keep partial outs (e.g. BAM) if a job fails MissingOutput / is killed mid-pipeline.
+keep-incomplete: true
+# Finish independent jobs in the current stage, skip anything that needs a
+# failed output, then exit non-zero. Do not abort the stage on the first error.
+keep-going: true
 printshellcmds: true
-retries: 1
+# Prefer explicit re-runs over silent retries (retries + bkill looked like flapping on mkref).
+retries: 0
+# Do not re-run finished Barrnap/BLAST jobs just because a .smk file was edited.
+# Input/params/software-env/mtime still trigger a re-run when they change.
+rerun-triggers:
+  - mtime
+  - params
+  - input
+  - software-env
 local-cores: 4
 
 default-resources:
+  # Pin project explicitly — auto-guess can hang / pick garbage on Wexac.
+  # lsf_queue here is only the fallback when a rule sets none. ./vihop replaces
+  # it with lsf.queues.short from the project config.
+  - lsf_project=default
   - lsf_queue=short
   - mem_mb=2000
   - disk_mb=4000

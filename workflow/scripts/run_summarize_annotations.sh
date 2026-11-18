@@ -23,18 +23,15 @@ mkdir -p "$(dirname "$out_full")" "$(dirname "$out_sum")"
 last_count_final=$(( last_count * 2 ))
 
 if [[ -n "$last_summary" && -s "$last_summary" ]]; then
-    (
-        cd "$root"
-        python bin/summarize_annotations.py \
-            --last_path "$last_summary" \
-            --blast_path "$blast_summary" \
-            --cell_path "$cells_tsv" \
-            --count_reads "$last_count_final" \
-            --percent "$percent" \
-            --level "$level"
-        mv -f "full_annotation.${level}.csv" "$out_full"
-        mv -f "summarized_annotation.${level}.csv" "$out_sum"
-    )
+    python "$root/bin/summarize_annotations.py" \
+        --last_path "$last_summary" \
+        --blast_path "$blast_summary" \
+        --cell_path "$cells_tsv" \
+        --count_reads "$last_count_final" \
+        --percent "$percent" \
+        --level "$level"
+    mv -f "full_annotation.${level}.csv" "$out_full"
+    mv -f "summarized_annotation.${level}.csv" "$out_sum"
 else
     echo "[summarize] LAST summary absent; writing BLAST-only annotation"
     python - "$blast_summary" "$cells_tsv" "$out_full" "$out_sum" "$level" "$percent" <<'PY'

@@ -1,0 +1,185 @@
+# MetaT_Eilat huge-ref Cell Ranger (Host_Virus_CR ~33 GB).
+# Keep results out of the Alps/repo tree — use a dedicated workdir:
+#   /home/labs/vardi/amirz/snakemake_vihop/ViHoP/vihop \
+#     --workdir /home/labs/vardi/amirz/pairing/MetaT_Eilat_261007/snakemake_vihop \
+#     --configfile config/config_metat_eilat.yaml --jobs 1
+# Repo-relative paths below are absolute so they resolve when --directory ≠ repo.
+# Pilot: keep only Eilat_04Mai until ALIGN_AND_COUNT shows allowed > 50G.
+# See docs/HUGE_REF_CELLRANGER.md
+
+input:
+  sample_table: /home/labs/vardi/amirz/snakemake_vihop/ViHoP/docs/sample_table_fastq.tsv
+  # Pilot first; after ALIGN gate passes, add Eilat_10X_1, Eilat_10X_3, Eilat_10X_8.
+  samples:
+    - Eilat_04Mai
+
+references:
+  # null = results/cellranger under workdir. Override: ./vihop --bam-root PATH
+  bam_root: null
+
+  transcriptome_fasta: /home/labs/vardi/amirz/pairing/MetaT_Eilat_261007/ViHoP/Host_Virus.95.final.fasta
+  cellranger_transcriptome_fasta: /home/labs/vardi/amirz/pairing/MetaT_Eilat_261007/ViHoP/Host_Virus.95.final.fasta
+  cellranger_ref_name: Host_Virus_CR
+  pr2_fasta: /home/labs/vardi/Collaboration/databases/pr2/pr2_version_5.0.0_dedup.fasta
+  pr2_db: /home/labs/vardi/Collaboration/databases/pr2/pr2_v5
+  metapr2_db: /home/labs/vardi/Collaboration/databases/pr2/metapr2_v2
+  virus_db_fasta: /home/labs/vardi/Collaboration/databases/GVDB/GVDB_markergenes/GVDB.markergenes_prot.faa
+  general_diamond_db: /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/refSeq223_Virus_appended_masked_lin.dmnd
+  refseq_catalog: /home/labs/vardi/Collaboration/databases/refseq/RefSeq-release223.taxid.catalog
+  refseq_nodes: /home/labs/vardi/Collaboration/databases/refseq/nodes.short.dmp
+  refseq_merged: /home/labs/vardi/Collaboration/databases/refseq/merged.edited.dmp
+  diamond_bin: /home/labs/vardi/amirz/miniconda3/bin/diamond
+  virus_taxonomy: /home/labs/vardi/Collaboration/databases/Aylward_DB_2024/0626_GV_Mirus_GKS_taxonomic_classification.csv
+
+taxonomy:
+  replacement_file: /home/labs/vardi/amirz/snakemake_vihop/ViHoP/docs/replacement_taxa.tsv
+  level: Class
+
+params:
+  stages:
+    reference: false   # reuse prebuilt Host_Virus_CR
+    cellranger: true
+    # After CR BAMs exist: choose_cells true, cellranger false → candidate_cells.tsv
+    choose_cells: false
+    downstream: false
+    virus_search: false  # or ./vihop --virus_search (needs barrnap batches)
+  cellranger:
+    threads: 8
+    module: cellranger/10.1.0
+    # --localmem GB (must match LSF total mem_mb/1000)
+    localmem_gb: 160
+    # --localvmem GB (raise above localmem; STAR needs virtual headroom)
+    localvmem_gb: 240
+    # Martian chunk override (48G → ~3 ALIGN chunks in 160G localmem; use *_huge.json for Host_Virus)
+    overrides_json: /home/labs/vardi/amirz/snakemake_vihop/ViHoP/config/cellranger_align_mem_expressed.json
+    # true only to wipe a stuck/bad pipestance; false keeps finished outs on re-run
+    force_clean: false
+    # --- advanced configuration (optional) ---
+    create_bam: true
+    chemistry: auto
+    expect_cells: null
+  reference:
+    dedup_method: mmseqs
+    dedup_identity: 0.95
+    mmseqs:
+      coverage: 0.30
+      cov_mode: 1
+      min_aln_len: 200
+      threads: 32
+    cdhit:
+      threads: 48
+    mkref_threads: 16
+  choose_cells:
+    # null = all filtered Cell Ranger cells; set ints to tighten.
+    min_umi: null
+    min_genes: null
+
+  extraction:
+    threads: 2
+  assembly:
+    cells_per_batch: 200
+    threads: 4
+  aggregation:
+    entropy: 0.7
+    threads: 4
+  host:
+    contig_length: 300
+    blast_evalue: "1e-10"
+    blast_threads: 8
+    # 4 fits in 16 GB; 32→96 GB and 64→192 GB via barrnap_mem_mb_per_thread.
+    barrnap_threads: 4
+    # How many pieces to cut the filtered transcript FASTA into (Barrnap + virus).
+    split_fasta: 40
+    barrnap_kingdom: fun
+    blast_identity: 99
+    blast_length: 300
+    # A real genus wins over a placeholder (*_X, Unknown diatom) even when the
+    # placeholder has a higher bitscore. Placeholder contigs are then dropped
+    # on cells that have a real genus. Set false to keep the highest bitscore.
+    force_annotation: true
+    blast_prefilter_pident: 90
+    blast_prefilter_length: 100
+    chimeric_percent: 80
+    summary_threads: 4
+  virus:
+    identity: 70
+    length: 30
+
+# Scheduler names for the lsf_queue roles used under resources.
+# On another cluster, set these to that site's queue names.
+lsf:
+  queues:
+    short: short
+    long: long
+
+resources:
+  reference:
+    dedup_mem_mb: 64000
+    mkref_mem_mb: 64000
+    disk_mb: 50000
+    runtime: 1440
+    lsf_queue: short
+  cellranger:
+    # LSF plugin: rusage mem = mem_mb / threads (per slot).
+    # 160000 / 8 = 20000 MB/slot → 8 × 20 GB = 160 GB total.
+    mem_mb: 160000
+    disk_mb: 200000
+    # Multi-day; use long queue (avoid short preemption / SIGINT).
+    runtime: 10080
+    lsf_queue: long
+  choose_cells:
+    mem_mb: 16000
+    disk_mb: 8000
+    runtime: 120
+    lsf_queue: short
+  extraction:
+    # One gzip writer per candidate cell; 2GB hits LSF TERM_MEMLIMIT on large samples.
+    mem_mb: 64000
+    disk_mb: 100000
+    runtime: 1440
+    lsf_queue: short
+  assembly:
+    mem_mb: 4000
+    disk_mb: 4000
+    runtime: 240
+    lsf_queue: short
+  aggregation:
+    # BBDuk heap is capped under this reservation.
+    mem_mb: 8000
+    disk_mb: 8000
+    runtime: 120
+    lsf_queue: short
+  host:
+    # Floor for Barrnap. Actual job RAM is max(this, threads × per_thread).
+    barrnap_mem_mb: 16000
+    barrnap_mem_mb_per_thread: 3000
+    blast_mem_mb: 8000
+    summary_mem_mb: 4000
+    disk_mb: 8000
+    # Short queue preempts cmsearch and blastn mid-run.
+    runtime: 720
+    lsf_queue: long
+  virus:
+    # DIAMOND very-sensitive blastx. Peak RSS ~5218 MB → keep total ≥ ~12 GB.
+    # LSF: -n cpus == span[ptile=cpus], rusage[mem=memory_per_slot].
+    # Long queue: short can preempt mid-blastx (~1h) under high fan-out.
+    cpus: 16
+    memory_per_slot: 750
+    summary_mem_mb: 4000
+    disk_mb: 50000
+    runtime: 720
+    lsf_queue: long
+
+outputs:
+  candidate_cells: results/candidate_cells.tsv
+  cells_dir: results/cells
+  # Prebuilt transcriptome (no mkref). cellranger_ref_done must exist as a file.
+  cellranger_ref: /home/labs/vardi/amirz/pairing/MetaT_Eilat_261007/ViHoP/Host_Virus_CR
+  cellranger_ref_done: /home/labs/vardi/amirz/pairing/MetaT_Eilat_261007/ViHoP/Host_Virus_CR/reference.json
+  combined_transcripts: results/assembly/all_cells.transcripts.final.fasta
+  rrna_18s: results/host/18S.rrna.fasta
+  blast_pr2: results/host/all_cells.rRNA.PR2.tsv
+  blast_metapr2: results/host/all_cells.rRNA.metaPR2.tsv
+  # blast_summary, summarized_annotation, and summary_blast_viruses
+  # are named from taxonomy.level.
+  viral_contigs: results/virus/summary_diamond_viruses.tsv

@@ -1,0 +1,7 @@
+{
+  "SC_RNA_COUNTER_CS.SC_MULTI_CORE.MULTI_GEM_WELL_PROCESSOR.COUNT_GEM_WELL_PROCESSOR._BASIC_SC_RNA_COUNTER._MATRIX_COMPUTER.ALIGN_AND_COUNT": {
+    "chunk.mem_gb": 64,
+    "chunk.vmem_gb": 96,
+    "chunk.threads": 1
+  }
+}

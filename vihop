@@ -1,47 +1,797 @@
 #!/usr/bin/env bash
 # Short wrapper around Snakemake with the LSF profile.
 #
-# Examples:
-#   ./vihop -n              # dry-run (foreground)
-#   ./vihop                 # run in background via nohup (recommended)
-#   ./vihop --fg            # run in foreground (e.g. inside tmux)
-#   ./vihop --fg -j 20
+# Heavy jobs still run on LSF; the controller (and progress) stay on this shell.
 #
-# IMPORTANT: Ctrl-C / killing the Snakemake controller calls `bkill`,
-# which sends SIGINT to compute jobs and makes BAM scans restart from zero.
+# Defaults:
+#   workdir  = current directory ($PWD)
+#   config   = $PWD/config.yaml or $PWD/config/config.yaml
+#              (else the example shipped in this repo)
+#
+# Examples:
+#   ./vihop -n
+#   ./vihop --choose_cells --bam-root /path/to/CR_outs
+#   ./vihop --cellranger --jobs 1
+#   ./vihop --virus_search           # virus DIAMOND only (needs combined transcripts)
+#   ./vihop --virus_search --split_fasta 200 --jobs 200
+#   ./vihop --annotation --bp 100 --tax_level Genus
+#   ./vihop --downstream --split_fasta 40
+#   ./vihop --workdir DIR --configfile /path/to/my_config.yaml --jobs 1
+#
+# bam_root default: results/cellranger (under workdir). Override with --bam-root.
+# Stage flags: --reference | --cellranger | --choose_cells | --downstream |
+#   --virus_search (also --virus-search)
+#   (if any are set, only those stages run)
+# --virus_search clears virus summary + work/ (keeps parts/ and *.dmnd) so a
+# protected viral_contigs cannot block rebuild and resumes fill missing parts.
+# Full wipe: rm -rf results/virus then --virus_search. Host BLAST is kept.
+# --split_fasta N (also --split-fasta) overrides params.host.split_fasta: how
+# many pieces to cut transcripts into. Barrnap/BLAST split the length-filtered
+# FASTA. Virus DIAMOND splits the combined transcripts, with no contig_length
+# cutoff. With --virus_search, if N differs from the virus splits on disk,
+# re-splits the combined transcripts (does not redo host Barrnap/BLAST).
+# Ignored with -n.
+# --annotation --bp N searches transcripts of length N (contig_length and
+# blast_length). The same command again keeps finished Barrnap/BLAST batches
+# and runs only the missing ones, then the summary. A different N replaces
+# the search. Virus, pairing, assembly, and Cell Ranger are left as they are.
+# Summary CSVs and results/host/qc are kept. New tables:
+# results/host/blast_summary.<tax_level>.<N>.csv,
+# full_annotation.<tax_level>.<N>.csv, and
+# summarized_annotation.<tax_level>.<N>.csv.
+# --tax_level (also --tax-level) overrides taxonomy.level for that summary
+# (Genus, Class, …). Default is the level in config.yaml. Requires --bp.
+# A dry-run does not delete anything.
+# --overwrite-downstream removes extraction, assembly, host, virus, and pairing
+# results so those stages run again. candidate cells, Cell Ranger, and the
+# reference are kept. Ignored with -n.
+# Before downstream, results/cells is scanned into results/tmp_extract.tsv and
+# results/tmp_assemble.tsv. Cells that already have non-empty reads.fq.gz or
+# transcripts are omitted. Those lists are deleted when snakemake exits.
+#
+# Ctrl-C on the controller calls bkill on running LSF jobs and stops the pipeline.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$ROOT"
-
 PROFILE="$ROOT/profiles/lsf"
-LOGDIR="$ROOT/logs"
-mkdir -p "$LOGDIR"
+SNAKEFILE="$ROOT/Snakefile"
 
-foreground=0
+foreground=1
+workdir=""
+bam_root=""
+stage_reference=""
+stage_cellranger=""
+stage_choose_cells=""
+stage_downstream=""
+stage_virus_search=""
+stage_annotation=""
+annotation_bp=""
+tax_level=""
+overwrite_downstream=0
+split_fasta=""
+user_configfile=0
 args=()
+prev=""
+
 for arg in "$@"; do
+    if [[ "$prev" == "--workdir" || "$prev" == "-d" ]]; then
+        workdir="$arg"
+        prev=""
+        continue
+    fi
+    if [[ "$prev" == "--bam-root" || "$prev" == "--bam_root" ]]; then
+        bam_root="$arg"
+        prev=""
+        continue
+    fi
+    if [[ "$prev" == "--split_fasta" || "$prev" == "--split-fasta" ]]; then
+        split_fasta="$arg"
+        prev=""
+        continue
+    fi
+    if [[ "$prev" == "--bp" ]]; then
+        annotation_bp="$arg"
+        prev=""
+        continue
+    fi
+    if [[ "$prev" == "--tax_level" || "$prev" == "--tax-level" ]]; then
+        tax_level="$arg"
+        prev=""
+        continue
+    fi
     case "$arg" in
-        --fg|--foreground) foreground=1 ;;
-        -n|--dry-run|--help|-h|--version) foreground=1; args+=("$arg") ;;
-        *) args+=("$arg") ;;
+        --bg|--background) foreground=0; prev="" ;;
+        --fg|--foreground) foreground=1; prev="" ;;
+        --workdir|-d) prev="$arg" ;;
+        --bam-root|--bam_root) prev="$arg" ;;
+        --split_fasta|--split-fasta) prev="$arg" ;;
+        --bp) prev="$arg" ;;
+        --tax_level|--tax-level) prev="$arg" ;;
+        --reference) stage_reference=1; prev="" ;;
+        --cellranger) stage_cellranger=1; prev="" ;;
+        --choose_cells|--choose-cells) stage_choose_cells=1; prev="" ;;
+        --downstream) stage_downstream=1; prev="" ;;
+        --virus_search|--virus-search) stage_virus_search=1; prev="" ;;
+        --annotation) stage_annotation=1; prev="" ;;
+        --overwrite-downstream|--overwrite_downstream) overwrite_downstream=1; prev="" ;;
+        --configfile|--configfiles) user_configfile=1; args+=("$arg"); prev="$arg" ;;
+        *)
+            if [[ "$prev" == "--configfile" || "$prev" == "--configfiles" ]]; then
+                args+=("$arg")
+                prev=""
+            else
+                args+=("$arg")
+                prev=""
+            fi
+            ;;
     esac
 done
+if [[ -n "$prev" && "$prev" != "--configfile" && "$prev" != "--configfiles" ]]; then
+    echo "ERROR: $prev requires an argument" >&2
+    exit 1
+fi
+if [[ "$prev" == "--configfile" || "$prev" == "--configfiles" ]]; then
+    echo "ERROR: $prev requires a file argument" >&2
+    exit 1
+fi
+if [[ -n "$split_fasta" ]]; then
+    if ! [[ "$split_fasta" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: --split_fasta must be a positive integer, got: $split_fasta" >&2
+        exit 1
+    fi
+fi
+if [[ -n "$annotation_bp" || -n "$tax_level" || -n "$stage_annotation" ]]; then
+    if [[ -z "$stage_annotation" || -z "$annotation_bp" ]]; then
+        echo "ERROR: host rerun is ./vihop --annotation --bp N [--tax_level Genus]" >&2
+        exit 1
+    fi
+    if ! [[ "$annotation_bp" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: --bp must be a positive integer, got: $annotation_bp" >&2
+        exit 1
+    fi
+    if [[ -n "$tax_level" && ! "$tax_level" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]]; then
+        echo "ERROR: --tax_level must be a rank name such as Genus or Class, got: $tax_level" >&2
+        exit 1
+    fi
+    if [[ -n "$stage_reference$stage_cellranger$stage_choose_cells$stage_downstream$stage_virus_search" ]]; then
+        echo "ERROR: --annotation reruns host detection only. Leave off --downstream, --virus_search, and the other stage flags." >&2
+        exit 1
+    fi
+fi
 
-if [[ "$foreground" -eq 1 ]]; then
-    exec snakemake --profile "$PROFILE" "${args[@]+"${args[@]}"}"
+# Default workdir = current directory (project checkout), not the install path.
+if [[ -z "$workdir" ]]; then
+    workdir="$PWD"
+fi
+mkdir -p "$workdir"
+workdir="$(cd "$workdir" && pwd)"
+
+LOGDIR="$workdir/logs"
+mkdir -p "$LOGDIR"
+
+# Drop products of extraction and everything after it. The cell list,
+# Cell Ranger BAMs, and the reference stay.
+overwrite_downstream_results() {
+    local rel path
+    local -a paths=(
+        results/extraction
+        results/cells
+        results/assembly
+        results/host
+        results/virus
+        results/pairing
+        results/finished
+    )
+    echo "[overwrite-downstream] clearing downstream results in $workdir"
+    for rel in "${paths[@]}"; do
+        path="$workdir/$rel"
+        if [[ ! -e "$path" ]]; then
+            echo "[overwrite-downstream] absent $rel"
+            continue
+        fi
+        echo "[overwrite-downstream] removing $rel"
+        chmod -R u+w "$path" 2>/dev/null || true
+        rm -rf "$path"
+    done
+}
+
+# Drop virus merge + scratch so ProtectedOutputException cannot block rebuild.
+# Keep finished parts/*.tsv and marker *.dmnd so a resume only fills gaps
+# (e.g. 2/200 LSF EXIT). Full wipe: rm -rf results/virus then --virus_search.
+# Host Barrnap/BLAST stays.
+clear_virus_search_results() {
+    local path="$workdir/results/virus"
+    local entry base
+    echo "[virus_search] clearing virus search products in $workdir"
+    if [[ ! -e "$path" ]]; then
+        echo "[virus_search] absent results/virus"
+        return
+    fi
+    chmod -R u+w "$path" 2>/dev/null || true
+    echo "[virus_search] removing summary/work (keeping parts/ and *.dmnd)"
+    shopt -s nullglob
+    for entry in "$path"/*; do
+        base=$(basename "$entry")
+        if [[ "$base" == "parts" || "$base" == *.dmnd ]]; then
+            continue
+        fi
+        rm -rf "$entry"
+    done
+    shopt -u nullglob
+}
+
+# resume: same --bp, keep finished batches. reset: a new cutoff, replace them.
+annotation_search_action() {
+    python3 - "$workdir" "$annotation_bp" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("ERROR: python3 needs PyYAML to read the annotation cutoff\n")
+    raise SystemExit(1)
+
+wd = Path(sys.argv[1])
+bp = int(sys.argv[2])
+stamp_path = wd / "results/host/annotation_bp.yaml"
+stamp_bp = None
+if stamp_path.is_file():
+    data = yaml.safe_load(stamp_path.read_text()) or {}
+    if data.get("bp") is not None:
+        stamp_bp = int(data["bp"])
+
+if stamp_bp is not None:
+    print("resume" if stamp_bp == bp else "reset")
+    raise SystemExit(0)
+
+search_dirs = (
+    wd / "results/host/barrnap_batches",
+    wd / "results/host/barrnap_parts",
+    wd / "results/host/blast_parts",
+)
+have_search = any(
+    path.is_dir() and any(path.glob("batch_*")) for path in search_dirs
+)
+if not have_search:
+    print("reset")
+    raise SystemExit(0)
+
+meta_name = base64.b64encode(
+    b"results/host/all_cells.transcripts.filtered.fasta"
+).decode()
+meta_path = wd / ".snakemake" / "metadata" / meta_name
+meta_bp = None
+if meta_path.is_file():
+    record = json.loads(meta_path.read_text())
+    params = record.get("params") or []
+    if params:
+        meta_bp = int(str(params[0]).strip("'\""))
+print("resume" if meta_bp is None or meta_bp == bp else "reset")
+PY
+}
+
+write_annotation_stamp() {
+    mkdir -p "$workdir/results/host"
+    python3 - "$workdir/results/host/annotation_bp.yaml" "$annotation_bp" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("ERROR: python3 needs PyYAML to record the annotation cutoff\n")
+    raise SystemExit(1)
+
+Path(sys.argv[1]).write_text(yaml.safe_dump({"bp": int(sys.argv[2])}, sort_keys=False))
+PY
+}
+
+# Drop the previous Barrnap/BLAST search so a shorter contig_length is
+# actually searched. Keep summary CSVs (including *.300.* copies) and qc/.
+# The keep-scripts would otherwise restore the old batches and skip the work.
+clear_host_annotation_results() {
+    local rel path steps
+    local -a paths=(
+        results/host/barrnap_batches
+        results/host/barrnap_parts
+        results/host/blast_parts
+        results/host/all_cells.transcripts.filtered.fasta
+        results/host/all_cells.rRNA.PR2.tsv
+        results/host/all_cells.rRNA.metaPR2.tsv
+        results/host/rrna.fa
+        results/host/rrna.gff
+        results/host/18S.rrna.fasta
+    )
+    echo "[annotation] clearing host search products in $workdir"
+    echo "[annotation] keeping summary CSVs and results/host/qc"
+    for rel in "${paths[@]}"; do
+        path="$workdir/$rel"
+        if [[ ! -e "$path" ]]; then
+            echo "[annotation] absent $rel"
+            continue
+        fi
+        echo "[annotation] removing $rel"
+        chmod -R u+w "$path" 2>/dev/null || true
+        rm -rf "$path"
+    done
+    steps="$workdir/results/finished/steps.yaml"
+    if [[ -f "$steps" ]]; then
+        python3 - "$steps" <<'PY'
+import sys
+from pathlib import Path
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("ERROR: python3 needs PyYAML to update steps.yaml\n")
+    raise SystemExit(1)
+path = Path(sys.argv[1])
+data = yaml.safe_load(path.read_text()) or {}
+data["barrnap_blast"] = False
+path.write_text(yaml.safe_dump(data, sort_keys=False))
+PY
+        echo "[annotation] set barrnap_blast: false in results/finished/steps.yaml"
+    fi
+}
+
+# Re-split the combined transcripts when N != virus splits on disk.
+# Does not touch host Barrnap/BLAST products or the 18S length filter.
+ensure_split_fasta() {
+    local n="$1"
+    local transcripts_rel
+    transcripts_rel="$(python3 - "$workdir" <<'PY'
+import sys
+from pathlib import Path
+try:
+    import yaml
+except ImportError:
+    print("results/assembly/all_cells.transcripts.final.fasta")
+    raise SystemExit(0)
+wd = Path(sys.argv[1])
+cfg = {}
+for rel in ("config.yaml", "config/config.yaml"):
+    path = wd / rel
+    if path.is_file():
+        cfg = yaml.safe_load(path.read_text()) or {}
+        break
+out = ((cfg.get("outputs") or {}).get("combined_transcripts")
+       or "results/assembly/all_cells.transcripts.final.fasta")
+print(out)
+PY
+)"
+    local transcripts="$workdir/$transcripts_rel"
+    local batchdir="$workdir/results/virus/batches"
+    local split_py="$ROOT/workflow/scripts/split_fasta_batches.py"
+    local existing=0
+    local f
+
+    if [[ -d "$batchdir" ]]; then
+        for f in "$batchdir"/batch_*.fasta; do
+            [[ -e "$f" ]] || continue
+            existing=$((existing + 1))
+        done
+    fi
+    if [[ "$existing" -eq "$n" ]]; then
+        echo "[split_fasta] already $n splits under results/virus/batches"
+        return
+    fi
+    if [[ ! -s "$transcripts" ]]; then
+        echo "ERROR: --split_fasta $n needs $transcripts to re-split (found $existing splits)." >&2
+        echo "Finish assembly first, or keep the existing split count." >&2
+        exit 1
+    fi
+    if [[ ! -f "$split_py" ]]; then
+        echo "ERROR: missing splitter $split_py" >&2
+        exit 1
+    fi
+    echo "[split_fasta] re-splitting combined transcripts into $n pieces (had $existing)"
+    chmod -R u+w "$batchdir" 2>/dev/null || true
+    rm -rf "$batchdir"
+    mkdir -p "$batchdir"
+    python "$split_py" "$transcripts" "$batchdir" "$n"
+}
+
+dry_run=0
+for arg in "${args[@]}"; do
+    if [[ "$arg" == "-n" || "$arg" == "--dry-run" || "$arg" == "--dryrun" ]]; then
+        dry_run=1
+    fi
+done
+if [[ "$overwrite_downstream" -eq 1 ]]; then
+    if [[ "$dry_run" -eq 1 ]]; then
+        echo "[overwrite-downstream] dry-run: downstream results were not removed"
+    else
+        overwrite_downstream_results
+    fi
+fi
+if [[ -n "$stage_virus_search" && "$overwrite_downstream" -eq 0 ]]; then
+    if [[ "$dry_run" -eq 1 ]]; then
+        echo "[virus_search] dry-run: virus products were not removed"
+        echo "[virus_search] note: a real run clears summary+work (keeps parts/*.dmnd) so ProtectedOutputException cannot block rebuild"
+    else
+        clear_virus_search_results
+    fi
+fi
+if [[ -n "$stage_virus_search" && -n "$split_fasta" && "$dry_run" -eq 0 ]]; then
+    ensure_split_fasta "$split_fasta"
+elif [[ -n "$stage_virus_search" && -n "$split_fasta" && "$dry_run" -eq 1 ]]; then
+    echo "[split_fasta] dry-run: would ensure $split_fasta splits under results/virus/batches"
+fi
+if [[ -n "$stage_annotation" ]]; then
+    annotation_action="$(annotation_search_action)"
+    if [[ "$annotation_action" == "resume" ]]; then
+        echo "[annotation] --bp ${annotation_bp} already started; running only missing batches"
+        if [[ "$dry_run" -eq 0 ]]; then
+            write_annotation_stamp
+        fi
+    elif [[ "$dry_run" -eq 1 ]]; then
+        echo "[annotation] dry-run: a real run would replace the host search for --bp ${annotation_bp}"
+    else
+        clear_host_annotation_results
+        write_annotation_stamp
+    fi
+fi
+
+smk=(
+    snakemake
+    --snakefile "$SNAKEFILE"
+    --directory "$workdir"
+    --profile "$PROFILE"
+)
+
+# Resolve --configfile: relative paths prefer workdir, then repo.
+resolved=()
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+    a="${args[$i]}"
+    if [[ "$a" == "--configfile" || "$a" == "--configfiles" ]]; then
+        resolved+=("$a")
+        i=$((i + 1))
+        cfg="${args[$i]:-}"
+        if [[ -n "$cfg" && "$cfg" != /* ]]; then
+            if [[ -f "$workdir/$cfg" ]]; then
+                cfg="$workdir/$cfg"
+            elif [[ -f "$ROOT/$cfg" ]]; then
+                cfg="$ROOT/$cfg"
+            else
+                cfg="$workdir/$cfg"
+            fi
+        fi
+        resolved+=("$cfg")
+    else
+        resolved+=("$a")
+    fi
+    i=$((i + 1))
+done
+
+# Default config when user did not pass --configfile.
+default_cfg=""
+if [[ "$user_configfile" -eq 0 ]]; then
+    if [[ -f "$workdir/config.yaml" ]]; then
+        default_cfg="$workdir/config.yaml"
+    elif [[ -f "$workdir/config/config.yaml" ]]; then
+        default_cfg="$workdir/config/config.yaml"
+    elif [[ -f "$ROOT/config/config.yaml" ]]; then
+        default_cfg="$ROOT/config/config.yaml"
+    else
+        echo "ERROR: no config.yaml or config/config.yaml in $workdir" >&2
+        echo "       (and no example at $ROOT/config/config.yaml)" >&2
+        exit 1
+    fi
+    resolved+=(--configfile "$default_cfg")
+fi
+
+# CLI overrides as a trailing configfile (avoids brittle --config dotted keys).
+# Always pin vihop_root to this install (dirname of ./vihop) so scripts resolve
+# from the repo, not from the project workdir.
+cli_cfg="$LOGDIR/cli_overrides.yaml"
+{
+    echo "vihop_root: \"$ROOT\""
+} >"$cli_cfg"
+cli_has=1
+
+if [[ -n "$bam_root" ]]; then
+    if [[ "$bam_root" != /* ]]; then
+        bam_root="$workdir/$bam_root"
+    fi
+    mkdir -p "$bam_root"
+    bam_root="$(cd "$bam_root" && pwd)"
+    {
+        echo "references:"
+        echo "  bam_root: \"$bam_root\""
+    } >>"$cli_cfg"
+    cli_has=1
+fi
+
+if [[ -n "$split_fasta" || -n "$annotation_bp" ]]; then
+    {
+        echo "params:"
+        echo "  host:"
+        if [[ -n "$split_fasta" ]]; then
+            echo "    split_fasta: $split_fasta"
+            # Kept for older configs/rules that still read barrnap_batches.
+            echo "    barrnap_batches: $split_fasta"
+        fi
+        if [[ -n "$annotation_bp" ]]; then
+            # Both cutoffs: the FASTA filter admits the transcript, and the
+            # post-BLAST filter keeps an alignment of that length.
+            echo "    contig_length: $annotation_bp"
+            echo "    blast_length: $annotation_bp"
+        fi
+    } >>"$cli_cfg"
+    cli_has=1
+fi
+if [[ -n "$tax_level" ]]; then
+    {
+        echo "taxonomy:"
+        echo "  level: \"$tax_level\""
+    } >>"$cli_cfg"
+    cli_has=1
+fi
+if [[ -n "$stage_annotation" ]]; then
+    echo "annotation_named_outputs: true" >>"$cli_cfg"
+    cli_has=1
+fi
+
+stage_cli=0
+if [[ -n "$stage_reference$stage_cellranger$stage_choose_cells$stage_downstream$stage_virus_search$stage_annotation" ]]; then
+    stage_cli=1
+    cli_has=1
+    {
+        echo "cli_stages:"
+        [[ -n "$stage_reference" ]] && echo "  - reference"
+        [[ -n "$stage_cellranger" ]] && echo "  - cellranger"
+        [[ -n "$stage_choose_cells" ]] && echo "  - choose_cells"
+        [[ -n "$stage_downstream" ]] && echo "  - downstream"
+        [[ -n "$stage_virus_search" ]] && echo "  - virus_search"
+        [[ -n "$stage_annotation" ]] && echo "  - annotation"
+    } >>"$cli_cfg"
+fi
+
+if [[ "$cli_has" -eq 1 ]]; then
+    resolved+=(--configfile "$cli_cfg")
+fi
+
+# Profile fallback queue. Rules that set lsf_queue already use lsf.queues via
+# the Snakefile; this covers a rule that leaves the queue unset.
+short_queue="short"
+queue_files=()
+for ((i = 0; i < ${#resolved[@]}; i++)); do
+    if [[ "${resolved[$i]}" == "--configfile" || "${resolved[$i]}" == "--configfiles" ]]; then
+        queue_files+=("${resolved[$((i + 1))]:-}")
+    fi
+done
+if [[ ${#queue_files[@]} -gt 0 ]]; then
+    short_queue="$(python3 - "${queue_files[@]}" <<'PY'
+import sys
+import yaml
+name = "short"
+for path in sys.argv[1:]:
+    if not path:
+        continue
+    with open(path) as handle:
+        cfg = yaml.safe_load(handle) or {}
+    queues = (cfg.get("lsf") or {}).get("queues") or {}
+    chosen = str(queues.get("short") or "").strip()
+    if chosen:
+        name = chosen
+print(name)
+PY
+)"
+fi
+smk+=(--default-resources "lsf_queue=${short_queue}")
+
+# Downstream expands per-cell rules from candidate_cells.tsv at parse time, so
+# choose_cells must finish (and the file exist) before a second snakemake parse.
+# When both stages are on, run two passes automatically.
+want_choose=0
+want_down=0
+if [[ "$stage_cli" -eq 1 ]]; then
+    [[ -n "$stage_choose_cells" ]] && want_choose=1
+    [[ -n "$stage_downstream" ]] && want_down=1
+else
+    _stage_cfg="$default_cfg"
+    if [[ -z "$_stage_cfg" ]]; then
+        for ((i = 0; i < ${#resolved[@]}; i++)); do
+            if [[ "${resolved[$i]}" == "--configfile" || "${resolved[$i]}" == "--configfiles" ]]; then
+                _stage_cfg="${resolved[$((i + 1))]:-}"
+                break
+            fi
+        done
+    fi
+    if [[ -n "$_stage_cfg" && -f "$_stage_cfg" ]]; then
+        eval "$(python3 - "$_stage_cfg" <<'PY'
+import sys, yaml
+s = (yaml.safe_load(open(sys.argv[1])) or {}).get("params", {}).get("stages", {}) or {}
+print(f"want_choose={1 if s.get('choose_cells') else 0}")
+print(f"want_down={1 if s.get('downstream') else 0}")
+print(f"cfg_reference={1 if s.get('reference') else 0}")
+print(f"cfg_cellranger={1 if s.get('cellranger') else 0}")
+PY
+)"
+    fi
+fi
+two_pass=0
+if [[ "$want_choose" -eq 1 && "$want_down" -eq 1 ]]; then
+    two_pass=1
+fi
+
+phase1_cfg="$LOGDIR/cli_phase1_no_downstream.yaml"
+if [[ "$two_pass" -eq 1 ]]; then
+    {
+        echo "cli_stages:"
+        if [[ "$stage_cli" -eq 1 ]]; then
+            [[ -n "$stage_reference" ]] && echo "  - reference"
+            [[ -n "$stage_cellranger" ]] && echo "  - cellranger"
+            echo "  - choose_cells"
+        else
+            [[ "${cfg_reference:-0}" -eq 1 ]] && echo "  - reference"
+            [[ "${cfg_cellranger:-0}" -eq 1 ]] && echo "  - cellranger"
+            echo "  - choose_cells"
+        fi
+    } >"$phase1_cfg"
 fi
 
 stamp="$(date +%Y%m%d_%H%M%S)"
 out="$LOGDIR/vihop_${stamp}.out"
 pidfile="$LOGDIR/vihop_${stamp}.pid"
 
-nohup snakemake --profile "$PROFILE" "${args[@]+"${args[@]}"}" \
-    >"$out" 2>&1 &
-echo $! >"$pidfile"
+echo "ViHoP workdir: $workdir"
+echo "  install (scripts): $ROOT"
+echo "  Snakefile: $SNAKEFILE"
+if [[ -n "$default_cfg" ]]; then
+    echo "  config: $default_cfg"
+elif [[ "$user_configfile" -eq 1 ]]; then
+    echo "  config: (from --configfile)"
+fi
+if [[ -n "$bam_root" ]]; then
+    echo "  bam_root: $bam_root"
+else
+    echo "  bam_root: results/cellranger (default)"
+fi
+if [[ -n "$split_fasta" ]]; then
+    echo "  split_fasta: $split_fasta"
+fi
+if [[ -n "$annotation_bp" ]]; then
+    echo "  host bp: $annotation_bp (contig_length and blast_length)"
+fi
+if [[ -n "$tax_level" ]]; then
+    echo "  tax_level: $tax_level"
+elif [[ -n "$stage_annotation" ]]; then
+    echo "  tax_level: from config"
+fi
+if [[ "$stage_cli" -eq 1 ]]; then
+    enabled=()
+    [[ -n "$stage_reference" ]] && enabled+=("reference")
+    [[ -n "$stage_cellranger" ]] && enabled+=("cellranger")
+    [[ -n "$stage_choose_cells" ]] && enabled+=("choose_cells")
+    [[ -n "$stage_downstream" ]] && enabled+=("downstream")
+    [[ -n "$stage_virus_search" ]] && enabled+=("virus_search")
+    [[ -n "$stage_annotation" ]] && enabled+=("annotation")
+    echo "  stages (CLI): ${enabled[*]}"
+else
+    echo "  stages: from config"
+fi
+if [[ "$two_pass" -eq 1 ]]; then
+    echo "  mode: two-pass (choose_cells → then downstream)"
+fi
+
+pending_py="$ROOT/workflow/scripts/pending_cells.py"
+
+# Scan results/cells once, before snakemake builds the downstream DAG.
+refresh_pending_cells() {
+    if [[ "${want_down:-0}" -ne 1 ]]; then
+        return 0
+    fi
+    if [[ ! -s "$workdir/results/candidate_cells.tsv" ]]; then
+        echo "[pending] candidate_cells.tsv is not ready"
+        return 0
+    fi
+    python3 "$pending_py" write "$workdir"
+}
+
+# Drop the lists after this snakemake process. The next run scans again.
+drop_pending_cells() {
+    if [[ "${want_down:-0}" -ne 1 ]]; then
+        return 0
+    fi
+    python3 "$pending_py" delete "$workdir" || true
+}
+
+# A done-stamp would skip extraction even when cell folders still hold contigs.
+force_extract=()
+if [[ "$overwrite_downstream" -eq 1 && "$dry_run" -eq 0 && "$want_down" -eq 1 ]]; then
+    cells_tsv="$workdir/results/candidate_cells.tsv"
+    if [[ -f "$cells_tsv" ]]; then
+        while IFS= read -r sample; do
+            [[ -n "$sample" ]] || continue
+            force_extract+=(--forcerun "extract_reads_${sample}")
+        done < <(awk -F '\t' 'NF >= 2 && !seen[$2]++ { print $2 }' "$cells_tsv")
+        echo "[overwrite-downstream] forcing extraction: ${force_extract[*]}"
+    fi
+fi
+
+run_vihop() {
+    if [[ "$foreground" -eq 1 ]]; then
+        set -o pipefail
+        "${smk[@]}" "$@" 2>&1 | tee -a "$out"
+        return $?
+    fi
+    # background: only used for the single combined invocation path below
+    nohup "${smk[@]}" "$@" >>"$out" 2>&1 &
+    echo $! >"$pidfile"
+    return 0
+}
+
+if [[ "$foreground" -eq 1 ]]; then
+    echo "ViHoP foreground (LSF jobs + live progress). Log also: $out"
+    echo "Ctrl-C cancels the pipeline (bkill of running LSF jobs)."
+    : >"$out"
+    if [[ "$two_pass" -eq 1 ]]; then
+        echo "ViHoP phase 1/2: through choose_cells (build candidate_cells.tsv)"
+        set +e
+        run_vihop "${resolved[@]+"${resolved[@]}"}" --configfile "$phase1_cfg"
+        ec=$?
+        set -e
+        if [[ "$ec" -ne 0 ]]; then
+            exit "$ec"
+        fi
+        echo "ViHoP phase 2/2: downstream (per-cell extraction and later steps)"
+        refresh_pending_cells
+        set +e
+        run_vihop "${resolved[@]+"${resolved[@]}"}" "${force_extract[@]+"${force_extract[@]}"}"
+        ec=$?
+        set -e
+        drop_pending_cells
+        exit "$ec"
+    fi
+    refresh_pending_cells
+    set +e
+    run_vihop "${resolved[@]+"${resolved[@]}"}" "${force_extract[@]+"${force_extract[@]}"}"
+    ec=$?
+    set -e
+    drop_pending_cells
+    exit "$ec"
+fi
+
+if [[ "$two_pass" -eq 1 ]]; then
+    # One background PID runs both snakemake passes in order.
+    nohup bash -c "
+        set +e
+        echo \"ViHoP phase 1/2: through choose_cells\"
+        $(printf '%q ' "${smk[@]}") $(printf '%q ' "${resolved[@]}") --configfile $(printf '%q' "$phase1_cfg")
+        ec=\$?
+        if [[ \$ec -ne 0 ]]; then
+            exit \$ec
+        fi
+        echo \"ViHoP phase 2/2: downstream\"
+        python3 $(printf '%q' "$pending_py") write $(printf '%q' "$workdir")
+        $(printf '%q ' "${smk[@]}") $(printf '%q ' "${resolved[@]}") $(printf '%q ' ${force_extract[@]+"${force_extract[@]}"})
+        ec=\$?
+        python3 $(printf '%q' "$pending_py") delete $(printf '%q' "$workdir")
+        exit \$ec
+    " >"$out" 2>&1 &
+    echo $! >"$pidfile"
+elif [[ "$want_down" -eq 1 ]]; then
+    refresh_pending_cells
+    nohup bash -c "
+        set +e
+        $(printf '%q ' "${smk[@]}") $(printf '%q ' "${resolved[@]}") $(printf '%q ' ${force_extract[@]+"${force_extract[@]}"})
+        ec=\$?
+        python3 $(printf '%q' "$pending_py") delete $(printf '%q' "$workdir")
+        exit \$ec
+    " >"$out" 2>&1 &
+    echo $! >"$pidfile"
+else
+    nohup "${smk[@]}" "${resolved[@]+"${resolved[@]}"}" \
+        "${force_extract[@]+"${force_extract[@]}"}" \
+        >"$out" 2>&1 &
+    echo $! >"$pidfile"
+fi
 
 echo "ViHoP started in background (PID $(cat "$pidfile"))."
 echo "  log: $out"
 echo "  Follow:  tail -f $out"
 echo "  LSF:     bjobs -u \$USER"
-echo "Do not Ctrl-C this wrapper for cluster jobs; use bkill only if you intend to cancel."
